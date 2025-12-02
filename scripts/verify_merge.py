@@ -1,7 +1,10 @@
 """Verifica l'integrità dell'unione dei dataset"""
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
+
 from pv_forecasting.data import load_pv_xlsx, load_wx_xlsx, align_hourly
+from pv_forecasting.features import standardize_feature_columns
 
 print("=" * 60)
 print("VERIFICA INTEGRITÀ UNIONE DATASET")
@@ -39,6 +42,7 @@ if len(wx_only) > 0:
 
 print("\n4. Unione con align_hourly...")
 merged = align_hourly(pv, wx)
+merged = standardize_feature_columns(merged)
 print(f"   Righe dopo unione: {len(merged)}")
 print(f"   Colonne: {merged.columns.tolist()}")
 print(f"   Periodo: {merged.index.min()} -> {merged.index.max()}")
@@ -61,20 +65,23 @@ if len(missing_hours) > 0:
     print(f"   [!] Prime ore mancanti: {missing_hours[:5].tolist()}")
 
 print("\n7. Campione dati uniti (prime 20 righe con PV > 0)...")
-sample = merged[merged['pv'] > 0][['pv', 'Ghi', 'temp', 'humidity']].head(20)
+sample = merged[merged['pv'] > 0][['pv', 'ghi', 'temp', 'humidity']].head(20)
 print(sample.to_string())
 
 print("\n8. Verifica allineamento PV-GHI (correlazione attesa)...")
 # PV dovrebbe correlere con GHI (irradianza)
-correlation = merged[['pv', 'Ghi', 'Dni', 'Dhi']].corr()['pv']
-print(f"   Correlazione PV-GHI: {correlation['Ghi']:.3f}")
-print(f"   Correlazione PV-DNI: {correlation['Dni']:.3f}")
-print(f"   Correlazione PV-DHI: {correlation['Dhi']:.3f}")
+for col in ["ghi", "dni", "dhi"]:
+    if col not in merged.columns:
+        merged[col] = pd.NA
+correlation = merged[['pv', 'ghi', 'dni', 'dhi']].corr()['pv']
+print(f"   Correlazione PV-GHI: {correlation['ghi']:.3f}")
+print(f"   Correlazione PV-DNI: {correlation['dni']:.3f}")
+print(f"   Correlazione PV-DHI: {correlation['dhi']:.3f}")
 
-if correlation['Ghi'] > 0.7:
+if correlation['ghi'] > 0.7:
     print("   [OK] Correlazione PV-GHI buona (> 0.7)")
 else:
-    print(f"   [!] Correlazione PV-GHI bassa ({correlation['Ghi']:.3f})")
+    print(f"   [!] Correlazione PV-GHI bassa ({correlation['ghi']:.3f})")
 
 print("\n9. Verifica timestamp specifici...")
 # Verifica un timestamp casuale
@@ -83,8 +90,10 @@ if test_ts in merged.index:
     row = merged.loc[test_ts]
     print(f"   2010-07-15 12:00 UTC:")
     print(f"     PV: {row['pv']:.2f} kW")
-    print(f"     GHI: {row['Ghi']:.2f} W/m²")
-    print(f"     Temp: {row['temp']:.2f} K")
+    if "ghi" in row:
+        print(f"     GHI: {row['ghi']:.2f} W/m²")
+    if "temp" in row:
+        print(f"     Temp: {row['temp']:.2f} K")
 
 print("\n" + "=" * 60)
 print("VERIFICA COMPLETATA")

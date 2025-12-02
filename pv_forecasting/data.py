@@ -66,7 +66,7 @@ def load_wx_xlsx(path: Path) -> pd.DataFrame:
     return out
 
 
-def align_hourly(pv: pd.DataFrame, wx: pd.DataFrame) -> pd.DataFrame:
+def align_hourly(pv: pd.DataFrame, wx: pd.DataFrame, keep_wx_future: bool = False) -> pd.DataFrame:
     # Join datasets with forward-fill interpolation for weather data
     pv_h = pv.copy()
     wx_h = wx.copy()
@@ -89,8 +89,9 @@ def align_hourly(pv: pd.DataFrame, wx: pd.DataFrame) -> pd.DataFrame:
     weather_cols = [c for c in df.columns if c != 'pv']
     df[weather_cols] = df[weather_cols].ffill()
     
-    # Keep only rows with PV data (removes weather-only timestamps)
-    df = df[df['pv'].notna()]
+    # Keep only rows with PV data unless explicitly keeping future weather-only rows
+    if not keep_wx_future:
+        df = df[df['pv'].notna()]
     
     # Remove duplicates if any (keep first occurrence)
     if df.index.duplicated().any():
@@ -112,4 +113,3 @@ def save_history(history: dict, out_dir: Path) -> Path:
     with p.open("w", encoding="utf-8") as f:
         json.dump(history, f, indent=2)
     return p
-
