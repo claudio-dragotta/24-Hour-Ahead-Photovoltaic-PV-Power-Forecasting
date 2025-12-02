@@ -5,4 +5,5 @@ __all__ = [
     "window",
     "metrics",
     "model",
+    "pipeline",
 ]

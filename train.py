@@ -11,8 +11,8 @@ from joblib import dump
 from sklearn.preprocessing import StandardScaler
 import tensorflow as tf
 
-from pv_forecasting.data import load_pv_xlsx, load_wx_xlsx, align_hourly, save_processed, save_history
-from pv_forecasting.features import add_time_cyclical, add_lags, add_rollings
+from pv_forecasting.data import save_history
+from pv_forecasting.pipeline import load_and_engineer_features, persist_processed
 from pv_forecasting.window import make_windows, chronological_split
 from pv_forecasting.model import build_cnn_bilstm
 from pv_forecasting.metrics import rmse, mase
@@ -44,29 +44,20 @@ def main():
     out_dir = Path(args.outdir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    pv = load_pv_xlsx(Path(args.pv_path), args.local_tz)
-    wx = load_wx_xlsx(Path(args.wx_path))
-    df = align_hourly(pv, wx)
-
-    # Feature engineering
-    df = add_time_cyclical(df)
-    # Lags and rolling for PV and GHI (if available)
-    lag_cols = [c for c in ["pv", "GHI", "ghi"] if c in df.columns]
-    if not lag_cols:
-        lag_cols = ["pv"]
-    df = add_lags(df, lag_cols, lags=[1, 24, 168])
-
-    roll_cols = [c for c in ["pv", "GHI", "ghi", "clouds_all", "cloud_cover", "wind_speed"] if c in df.columns]
-    df = add_rollings(df, roll_cols, windows=[3, 6])
-
-    # Drop initial rows with NaNs from lag/rolling to ensure windows are valid
-    df = df.dropna()
+    # Feature engineering (standardized naming, physics features, lag/rolling)
+    df = load_and_engineer_features(
+        Path(args.pv_path),
+        Path(args.wx_path),
+        args.local_tz,
+        lag_hours=[1, 24, 168],
+        rolling_hours=[3, 6],
+    )
 
     # Save processed
-    save_processed(df, out_dir)
+    persist_processed(df, out_dir)
 
     # Scale features (fit on train only)
-    feature_cols = [c for c in df.columns if c != "pv"]
+    feature_cols = [c for c in df.columns if c not in {"pv", "time_idx", "series_id"}]
     full_feature_df = df[feature_cols]
     target_series = df["pv"]
 

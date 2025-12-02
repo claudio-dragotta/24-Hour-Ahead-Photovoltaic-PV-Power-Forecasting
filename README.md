@@ -4,15 +4,24 @@
 
 Accurate forecasting of photovoltaic (PV) power generation is crucial for efficient grid management, energy storage optimization, and renewable energy integration. This project implements a deep learning-based approach for 24-hour ahead PV power forecasting using historical production data and meteorological observations.
 
-The system leverages a hybrid CNN-BiLSTM architecture to capture both spatial patterns and temporal dependencies in the data. By combining convolutional layers for feature extraction with bidirectional LSTM networks for sequence modeling, the model achieves robust predictions across varying weather conditions and seasonal patterns.
+The system currently provides a hybrid CNN-BiLSTM baseline and is being upgraded to a competition‑ready pipeline based on a modern Temporal Fusion Transformer (TFT) model and a strong LightGBM baseline with an ensemble on top. The upgrade adds physics‑informed features (pvlib: solar position, clear‑sky, POA), robust anti‑leakage handling, walk‑forward validation, and optional probabilistic outputs.
 
-### Key Features
+### Key Features (Current)
 
 - **Multi-step forecasting**: Predicts power output for the next 24 hours in a single forward pass
 - **Robust time handling**: Comprehensive management of timezone conversions and daylight saving time transitions
 - **Hybrid architecture**: Combines CNN feature extraction with BiLSTM temporal modeling
 - **Feature engineering**: Incorporates cyclical time features, lag variables, and rolling statistics
 - **Rigorous evaluation**: Uses MASE and RMSE metrics with naive baseline comparison
+
+### Key Features (Planned Upgrade)
+
+- **State‑of‑the‑art model**: Temporal Fusion Transformer (via Darts/PyTorch Forecasting)
+- **Strong baseline**: LightGBM multi‑orizzonte (24 ore) con feature ingegnerizzate
+- **Ensemble**: Combinazione pesata TFT + LightGBM ottimizzata su validation
+- **Physics‑informed features**: posizione solare, clear‑sky (Ineichen), POA, clearness index (CSI)
+- **Anti‑leakage day‑ahead**: uso di sole informazioni disponibili a t e (se presenti) covariate meteo future
+- **Validazione robusta**: walk‑forward multi‑fold, metriche per orizzonte e skill vs baseline fisiche
 
 ### Dataset Overview
 
@@ -47,6 +56,13 @@ The project utilizes two years (2010-2012) of data from a solar installation in 
 11. [Evaluation Metrics](#evaluation-metrics)
 12. [Reproducibility](#reproducibility)
 13. [Notes and Recommendations](#notes-and-recommendations)
+14. [Upcoming Upgrade (TFT + LightGBM + Ensemble)](#upcoming-upgrade-tft--lightgbm--ensemble)
+    - [Why This Change](#why-this-change)
+    - [What Will Change](#what-will-change)
+    - [Dependencies and GPU Setup](#dependencies-and-gpu-setup)
+    - [New Training Modes](#new-training-modes)
+    - [Validation and Anti‑Leakage Policy](#validation-and-anti-leakage-policy)
+    - [Deliverables and Reproducibility](#deliverables-and-reproducibility)
 
 ---
 
@@ -200,11 +216,13 @@ python scripts/verify_merge.py
 7. Evaluate metrics: MASE (primary), RMSE; compare to naive baseline PV(t)=PV(t-24)
 8. Export predictions on test split to CSV format
 
+Note: this section describes the current baseline pipeline. See the upgrade section for the new TFT + LightGBM + ensemble workflow.
+
 ---
 
 ## Model Architecture
 
-The forecasting model uses a **hybrid CNN-BiLSTM architecture**:
+The current baseline uses a **hybrid CNN-BiLSTM architecture**:
 
 - **Input Layer**: 168 timesteps × n features
 - **Conv1D Layers**: Extract local patterns and reduce dimensionality
@@ -232,6 +250,63 @@ source .venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
+#### Quickstart su WSL (Ubuntu)
+
+```bash
+# attiva WSL (Ubuntu) e spostati nella repo
+cd ~/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting
+# crea e attiva il venv
+python3 -m venv .venv
+source .venv/bin/activate
+# installa le dipendenze (GPU CUDA già inclusa in torch 2.9.1+cu128 installata sopra)
+pip install -r requirements.txt
+# verifica GPU
+python - <<'PY'
+import torch
+print(torch.__version__, 'cuda:', torch.cuda.is_available())
+PY
+```
+
+### Pipeline B: TFT (PyTorch Forecasting) + LightGBM + Ensemble (WSL/Ubuntu)
+
+1) **Data & anti‑leakage**
+   - Colonne meteo normalizzate a lowercase (`ghi`, `dni`, `dhi`, `temp`, `humidity`, `clouds`, `wind_speed`).
+   - `pv_forecasting/pipeline.py` crea feature (cicliche, lag 1/24/168, rolling 3/6h, solar/clear‑sky) e salva `outputs/processed.parquet`.
+   - Due modalità: `--use-future-meteo` se hai covariate future (NWP); altrimenti solo lag + feature fisiche future (derivabili dal timestamp).
+
+2) **LightGBM multi‑orizzonte (24 modelli)**
+```bash
+python lgbm_train.py --outdir outputs_lgbm --walk-forward-folds 3  # opzionale WF
+```
+   - Salva modelli per h=1..24 in `outputs_lgbm/models/`, predizioni/metriche validation e (se richiesto) walk‑forward.
+
+3) **TFT (PyTorch Forecasting)**
+```bash
+python tft_train.py --outdir outputs_tft --use-future-meteo   # se hai meteo future
+```
+   - Crea dataset encoder 168h / decoder 24h, quantile loss (0.1/0.5/0.9), early stopping, checkpoint `tft-best.ckpt`, predizioni/metriche validation per orizzonte.
+
+4) **Ensemble su validation**
+```bash
+python scripts/ensemble.py \
+  --tft-preds outputs_tft/predictions_val_tft.csv \
+  --lgbm-preds outputs_lgbm/predictions_val_lgbm.csv \
+  --processed-path outputs/processed.parquet
+```
+   - Cerca il peso TFT che minimizza RMSE, salva blend e metriche in `outputs_ensemble/`.
+
+5) **Inference (dataset prof)**
+```bash
+python predict.py \
+  --pv-path data/raw/pv_dataset.xlsx \
+  --wx-path data/raw/wx_dataset.xlsx \
+  --future-wx-path <opzionale NWP> \
+  --lgbm-dir outputs_lgbm \
+  --tft-ckpt outputs_tft/tft-best.ckpt \
+  --ensemble-weights outputs_ensemble/ensemble_weights.json
+```
+   - Auto‑switch con/senza meteo future; genera `outputs_predictions/predictions_next24.csv`.
+
 ---
 
 ## Usage
@@ -256,6 +331,29 @@ python train.py \
   --epochs 50 \
   --batch-size 64
 ```
+
+### LightGBM Baseline (24 regressori)
+
+```bash
+python lgbm_train.py --outdir outputs_lgbm
+```
+
+### Temporal Fusion Transformer (PyTorch Forecasting)
+
+```bash
+python tft_train.py --outdir outputs_tft --use-future-meteo   # se hai NWP/meteo future
+```
+
+### Ensemble e Inference
+
+- Valida il peso dell'ensemble:
+  ```bash
+  python scripts/ensemble.py --tft-preds outputs_tft/predictions_val_tft.csv --lgbm-preds outputs_lgbm/predictions_val_lgbm.csv
+  ```
+- Previsione day-ahead (auto-switch con/senza meteo future se forniti):
+  ```bash
+  python predict.py --pv-path data/raw/pv_dataset.xlsx --wx-path data/raw/wx_dataset.xlsx --future-wx-path <opzionale>
+  ```
 
 ### Data Preparation
 
@@ -282,6 +380,9 @@ After training, the following files are generated in the `outputs/` directory:
 - `model_best.keras`: Best model weights (lowest validation loss)
 - `history.json`: Training and validation loss history
 - `predictions_test.csv`: Long-format predictions for the test split
+- `outputs_lgbm/`: LightGBM per-horizon models (`models/lgbm_h*.joblib`), validation predictions/metrics
+- `outputs_tft/`: TFT checkpoint (`tft-best.ckpt`), validation predictions/metrics
+- `outputs_ensemble/`: Validation blending weights and blended predictions
 
 ### Predictions CSV Format
 
@@ -325,11 +426,75 @@ The model is evaluated using:
 
 ---
 
+## Upcoming Upgrade (TFT + LightGBM + Ensemble)
+
+This repository is being upgraded to a competition‑ready pipeline to maximize day‑ahead accuracy and robustness.
+
+### Why This Change
+
+- Achieve state‑of‑the‑art accuracy on hidden test sets with diverse conditions.
+- Leverage physics‑informed features to generalize across seasons and weather regimes.
+- Provide probabilistic outputs (quantiles) when needed and ensure strict anti‑leakage.
+
+### What Will Change
+
+- Features (pvlib): add solar position (zenith/azimuth), clear‑sky (Ineichen), optional POA, and clearness index (CSI).
+- Baselines: add clear‑sky persistence and a strong LightGBM multi‑horizon forecaster.
+- SOTA model: add TFT (via Darts or PyTorch Forecasting) with quantile loss (e.g., q10/50/90).
+- Ensemble: combine TFT + LightGBM with validation‑optimized weights; night‑time clipping and [0, capacity] constraints.
+- Validation: move from single split to walk‑forward multi‑fold; report metrics by horizon and skill scores.
+- Data hygiene: unify weather column naming to lowercase (e.g., `ghi`, `dni`, `dhi`) and rename rolling features to `roll{w}h`.
+- Processed format: standardize on Parquet in `outputs/processed.parquet` (CSV in `data/processed` kept for reference but deprecated).
+
+### Dependencies and GPU Setup
+
+- Add: `pvlib`, `lightgbm`, `optuna`, and for TFT either `darts[u]` or `pytorch-forecasting` + `pytorch-lightning`.
+- Install PyTorch with CUDA (example for CUDA 12.1 on Windows):
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# Then one of:
+pip install darts[u] pytorch-lightning
+# or
+pip install pytorch-forecasting pytorch-lightning
+```
+
+- Verify GPU:
+
+```bash
+python -c "import torch; print(torch.cuda.is_available())"
+```
+
+### New Training Modes
+
+- Baseline (current): `python train.py` trains CNN‑BiLSTM.
+- LightGBM (new): `python train.py --model lightgbm` trains 24 horizons with engineered features.
+- TFT (new): `python tft_train.py` (or `python train.py --model tft`) trains a Temporal Fusion Transformer with quantile loss.
+- Ensemble (new): `python scripts/ensemble.py` finds validation weights and merges predictions.
+
+Notes:
+- Two operational modes will be supported for day‑ahead:
+  - `with_future_meteo`: if future weather covariates are provided (NWP/test file)
+  - `no_future_meteo`: if not available; the model uses only past lags and future time/solar/clear‑sky features
+
+### Validation and Anti‑Leakage Policy
+
+- Walk‑forward expanding validation with 3–5 folds (no shuffle).
+- Strict anti‑leakage: features at time t use only information available at t; future covariates are allowed only if provided as known inputs (e.g., NWP).
+- Metrics reported globally and per horizon (1–24h), plus skill vs persistence (t‑24) and clear‑sky persistence.
+
+### Deliverables and Reproducibility
+
+- Models: `outputs/model_lgbm/*.bin`, `outputs/model_tft/*.ckpt`.
+- Data artifacts: `outputs/processed.parquet`, scalers/encoders.
+- Predictions and metrics: per‑fold CSVs, final `predictions_test.csv`.
+- A `predict.py` script will load the final models and produce predictions from the professor’s test file with automatic mode detection.
+
+---
+
 ## Project Information
 
 **Author**: Ludovico  
 **Date**: November 2025  
 **Institution**: Deep Learning Course - Magistrale  
 **Repository**: [24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting](https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting)
-
-

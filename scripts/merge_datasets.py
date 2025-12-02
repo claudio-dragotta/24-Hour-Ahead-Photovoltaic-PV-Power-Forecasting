@@ -4,6 +4,8 @@ import argparse
 from pathlib import Path
 
 from pv_forecasting.data import load_pv_xlsx, load_wx_xlsx, align_hourly
+from pv_forecasting.features import standardize_feature_columns
+from pv_forecasting.pipeline import persist_processed
 
 
 def parse_args():
@@ -28,6 +30,7 @@ def main():
     
     print("\nUnione dei dataset...")
     merged = align_hourly(pv, wx)
+    merged = standardize_feature_columns(merged)
     print(f"  - Dataset unito: {len(merged)} righe, {len(merged.columns)} colonne")
     print(f"  - Colonne: {list(merged.columns)}")
     print(f"  - Periodo: da {merged.index.min()} a {merged.index.max()}")
@@ -42,6 +45,8 @@ def main():
     else:
         # Default to CSV
         merged.to_csv(output_path)
+
+    persist_processed(merged, Path("outputs"))
     
     print(f"[OK] Dataset unito salvato con successo!")
     print(f"\nRiepilogo:")

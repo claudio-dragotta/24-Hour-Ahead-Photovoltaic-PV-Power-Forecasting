@@ -7,8 +7,8 @@ data/
 ├── raw/              # Original datasets (do not modify)
 │   ├── pv_dataset.xlsx      # PV power production data
 │   └── wx_dataset.xlsx      # Weather data
-└── processed/        # Processed and merged datasets
-    └── merged_dataset.csv   # Merged PV + Weather data
+└── processed/        # Processed and merged datasets (legacy CSV)
+    └── merged_dataset.csv   # Merged PV + Weather data (use outputs/processed.parquet instead)
 ```
 
 ## Raw Data
@@ -25,11 +25,13 @@ data/
 
 ## Processed Data
 
-- **merged_dataset.csv**: Unified dataset with PV and weather data aligned
+- **outputs/processed.parquet**: Unified dataset with PV and weather data aligned (preferred format)
   - 17,542 rows with complete data
+  - Weather columns standardized to lowercase (`ghi`, `dni`, `dhi`, `temp`, `humidity`, `clouds`, `wind_speed`)
+  - Rolling features follow the `roll{w}h` naming (e.g., `pv_roll3h`)
   - Preserves millisecond precision in timestamps
-  - Weather data forward-filled to match PV timestamps
   - All timestamps in UTC
+- **merged_dataset.csv** (legacy): Kept for backward compatibility; regenerated via `scripts/merge_datasets.py`
 
 ## Usage
 

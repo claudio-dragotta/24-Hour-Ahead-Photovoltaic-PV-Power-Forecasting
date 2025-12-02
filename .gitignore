@@ -25,6 +25,10 @@ data/processed/*.xlsx
 
 # Model outputs
 outputs/
+outputs_lgbm/
+outputs_tft/
+outputs_ensemble/
+outputs_predictions/
 *.keras
 *.h5
 *.joblib
