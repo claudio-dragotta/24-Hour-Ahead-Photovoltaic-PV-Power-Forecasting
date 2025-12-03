@@ -20,6 +20,7 @@ from .features import (
     add_rollings_h,
     add_solar_position,
     add_time_cyclical,
+    encode_weather_description,
     standardize_feature_columns,
 )
 
@@ -111,6 +112,10 @@ def load_and_engineer_features(
     df = align_hourly(pv, wx, keep_wx_future=keep_wx_future)
 
     df = standardize_feature_columns(df)
+
+    # Encode weather_description from text to numerical ordinal values
+    df = encode_weather_description(df, col="weather_description")
+
     df = add_time_cyclical(df)
 
     if include_solar:
@@ -119,6 +124,9 @@ def load_and_engineer_features(
         df = add_clearsky(df)
     if include_clearsky and "ghi" in df.columns:
         df = add_kc(df, ghi_col="ghi")
+        # Fill kc NaN values (nighttime) with 0
+        if "kc" in df.columns:
+            df["kc"] = df["kc"].fillna(0.0)
 
     lag_cols = [c for c in ["pv", "ghi", "dni", "dhi"] if c in df.columns]
     if lag_hours and lag_cols:

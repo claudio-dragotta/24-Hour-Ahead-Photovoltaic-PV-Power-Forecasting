@@ -122,7 +122,10 @@ def load_wx_xlsx(path: Path) -> pd.DataFrame:
         drop_cols: Iterable[str] = [ts_col]
         feat_df = df.drop(columns=list(drop_cols), errors="ignore")
         # Cast numeric where possible (coerce non-numeric to NaN)
+        # EXCEPT for weather_description which is categorical and will be encoded later
         for c in feat_df.columns:
+            if 'weather' in c.lower() and 'description' in c.lower():
+                continue  # Keep weather_description as string for encoding later
             try:
                 feat_df[c] = pd.to_numeric(feat_df[c], errors="coerce")
             except (ValueError, TypeError):
@@ -186,9 +189,11 @@ def align_hourly(pv: pd.DataFrame, wx: pd.DataFrame, keep_wx_future: bool = Fals
     pv_h = pv.copy()
     wx_h = wx.copy()
 
-    # Drop non-numeric columns from weather data
-    numeric_cols = wx_h.select_dtypes(include=[np.number]).columns
-    wx_h = wx_h[numeric_cols]
+    # Keep numeric columns + weather_description (will be encoded later)
+    numeric_cols = wx_h.select_dtypes(include=[np.number]).columns.tolist()
+    weather_desc_cols = [c for c in wx_h.columns if 'weather' in c.lower() and 'description' in c.lower()]
+    keep_cols = numeric_cols + weather_desc_cols
+    wx_h = wx_h[keep_cols]
 
     # Convert to UTC without rounding
     pv_h.index = pv_h.index.tz_convert("UTC")
