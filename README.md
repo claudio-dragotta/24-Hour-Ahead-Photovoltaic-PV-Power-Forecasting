@@ -1,5 +1,10 @@
 # 24-Hour Ahead Photovoltaic (PV) Power Forecasting
 
+[![CI](https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/workflows/CI/badge.svg)](https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/actions)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 ## Introduction
 
 Accurate forecasting of photovoltaic (PV) power generation is crucial for efficient grid management, energy storage optimization, and renewable energy integration. This project implements a deep learning-based approach for 24-hour ahead PV power forecasting using historical production data and meteorological observations.
@@ -31,6 +36,18 @@ The project utilizes two years (2010-2012) of data from a solar installation in 
 - **Weather Data**: 14 meteorological variables including temperature, humidity, wind, and solar irradiance (GHI, DNI, DHI)
 - **Location**: Australia (Sydney region, UTC+10:00 timezone)
 - **Installed Capacity**: 82.41 kWp
+
+### Professional Development Setup
+
+This project follows professional software engineering best practices:
+
+- **Comprehensive Testing**: Full test suite with pytest (40+ tests covering features, metrics, data processing, and pipeline integration)
+- **CI/CD Pipeline**: GitHub Actions workflow for automated testing, linting, and building across Python 3.9-3.12
+- **Code Quality**: Automated formatting (Black), import sorting (isort), linting (flake8), and type checking (mypy)
+- **Pre-commit Hooks**: Automatic code quality checks before every commit
+- **Modern Packaging**: Full `pyproject.toml` setup with proper dependencies and metadata
+- **Structured Logging**: Professional logging framework for debugging and monitoring
+- **Versioning**: Semantic versioning with `__version__` attribute
 
 ---
 
@@ -70,34 +87,60 @@ The project utilizes two years (2010-2012) of data from a solar installation in 
 
 ```
 24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/
-├── README.md                  # Project documentation
-├── requirements.txt           # Python dependencies
-├── train.py                   # Main training script
+├── README.md                      # Project documentation
+├── LICENSE                        # MIT License
+├── pyproject.toml                 # Modern Python packaging & tool config
+├── requirements.txt               # Python dependencies
 │
-├── data/                      # Data directory
-│   ├── README.md              # Data documentation
-│   ├── raw/                   # Original datasets
-│   │   ├── pv_dataset.xlsx    # PV production data
-│   │   └── wx_dataset.xlsx    # Weather data
-│   └── processed/             # Processed datasets
-│       └── merged_dataset.csv # Merged and aligned data
+├── .github/workflows/             # CI/CD pipelines
+│   └── ci.yml                     # Automated testing & linting
+├── .pre-commit-config.yaml        # Pre-commit hooks configuration
+├── .flake8                        # Flake8 linting configuration
+├── .pylintrc                      # Pylint configuration
+├── .gitignore                     # Git ignore rules
 │
-├── scripts/                   # Utility scripts
-│   ├── merge_datasets.py      # Dataset merging script
-│   ├── verify_merge.py        # Data integrity verification
-│   ├── check_merged.py        # Quick data check
-│   └── analyze_errors.py      # Error analysis utilities
+├── pv_forecasting/                # Main Python package
+│   ├── __init__.py                # Package initialization with versioning
+│   ├── data.py                    # Data loading utilities
+│   ├── features.py                # Feature engineering
+│   ├── logger.py                  # Structured logging
+│   ├── metrics.py                 # Evaluation metrics
+│   ├── model.py                   # Model architecture
+│   ├── pipeline.py                # Feature engineering pipeline
+│   ├── timeutils.py               # Timezone handling
+│   └── window.py                  # Sliding window creation
 │
-├── notebooks/                 # Jupyter notebooks
-├── outputs/                   # Model outputs (generated)
-└── pv_forecasting/            # Main Python package
-    ├── __init__.py
-    ├── data.py                # Data loading utilities
-    ├── features.py            # Feature engineering
-    ├── metrics.py             # Evaluation metrics
-    ├── model.py               # Model architecture
-    ├── timeutils.py           # Timezone handling
-    └── window.py              # Sliding window creation
+├── tests/                         # Test suite (pytest)
+│   ├── conftest.py                # Shared test fixtures
+│   ├── test_features.py           # Feature engineering tests
+│   ├── test_data.py               # Data loading tests
+│   ├── test_metrics.py            # Metrics tests
+│   └── test_pipeline.py           # Pipeline integration tests
+│
+├── data/                          # Data directory
+│   ├── README.md                  # Data documentation
+│   ├── raw/                       # Original datasets
+│   │   ├── pv_dataset.xlsx        # PV production data
+│   │   └── wx_dataset.xlsx        # Weather data
+│   └── processed/                 # Processed datasets
+│       └── merged_dataset.csv     # Merged and aligned data
+│
+├── scripts/                       # Utility scripts
+│   ├── merge_datasets.py          # Dataset merging script
+│   ├── verify_merge.py            # Data integrity verification
+│   ├── check_merged.py            # Quick data check
+│   ├── analyze_errors.py          # Error analysis utilities
+│   └── ensemble.py                # Ensemble model combination
+│
+├── train.py                       # CNN-BiLSTM training script
+├── lgbm_train.py                  # LightGBM multi-horizon training
+├── tft_train.py                   # TFT training script
+├── predict.py                     # Inference script
+│
+├── outputs/                       # Model outputs (generated)
+├── outputs_lgbm/                  # LightGBM outputs (generated)
+├── outputs_tft/                   # TFT outputs (generated)
+└── outputs_ensemble/              # Ensemble outputs (generated)
 ```
 
 ---
@@ -230,6 +273,81 @@ The current baseline uses a **hybrid CNN-BiLSTM architecture**:
 - **Dense Output**: 24 neurons (one per forecast hour)
 - **Loss Function**: Mean Squared Error (MSE)
 - **Optimizer**: Adam with early stopping
+
+---
+
+## Development & Testing
+
+### Testing
+
+The project includes a comprehensive test suite with 40+ tests covering all major components:
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage report
+pytest --cov=pv_forecasting --cov-report=html
+
+# Run only fast tests (skip slow integration tests)
+pytest -m "not slow"
+
+# Run specific test file
+pytest tests/test_features.py
+
+# Run with verbose output
+pytest -v
+```
+
+Test coverage reports are generated in `htmlcov/index.html`.
+
+### Code Quality & Linting
+
+The project uses automated code quality tools:
+
+```bash
+# Format code with Black (line length 120)
+black pv_forecasting/ tests/ *.py
+
+# Sort imports with isort
+isort pv_forecasting/ tests/ *.py
+
+# Lint with flake8
+flake8 pv_forecasting/ tests/ *.py
+
+# Type check with mypy
+mypy pv_forecasting/ --ignore-missing-imports
+
+# Run all checks at once
+pre-commit run --all-files
+```
+
+### Pre-commit Hooks
+
+Install pre-commit hooks to automatically run checks before each commit:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Now every `git commit` will automatically:
+- Format code with Black
+- Sort imports with isort
+- Run flake8 linting
+- Check types with mypy
+- Validate YAML/JSON files
+- Check for large files and secrets
+
+### Continuous Integration
+
+GitHub Actions automatically runs:
+- Tests on Python 3.9, 3.10, 3.11, 3.12
+- Linting and formatting checks
+- Code coverage analysis
+- Package building and validation
+
+See `.github/workflows/ci.yml` for the full CI configuration.
 
 ---
 
@@ -494,7 +612,7 @@ Notes:
 
 ## Project Information
 
-**Author**: Ludovico  
-**Date**: November 2025  
+**Author**: Claudio Dragotta
+**Date**: November 2025
 **Institution**: Deep Learning Course - Magistrale  
 **Repository**: [24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting](https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting)

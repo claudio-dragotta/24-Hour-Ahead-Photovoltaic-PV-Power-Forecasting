@@ -4,42 +4,99 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
 venv/
 ENV/
-.venv
-*.egg-info/
-dist/
-build/
+env/
+.virtualenv/
 
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb
-
-# Data files
-data/raw/*.xlsx
-data/raw/*.csv
-data/processed/*.csv
-data/processed/*.parquet
-data/processed/*.xlsx
-
-# Model outputs
-outputs/
-outputs_lgbm/
-outputs_tft/
-outputs_ensemble/
-outputs_predictions/
-*.keras
-*.h5
-*.joblib
-*.json
-
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+# Uncomment below to ignore all notebooks (currently allowed for EDA)
+# *.ipynb
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+.cache
+nosetests.xml
+coverage.xml
+*.log
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# Data files (IMPORTANT: Don't commit raw/processed data)
+data/raw/*.xlsx
+data/raw/*.csv
+data/raw/*.parquet
+data/processed/*.csv
+data/processed/*.parquet
+data/processed/*.xlsx
+data/processed/*.joblib
+
+# Model outputs (IMPORTANT: Don't commit trained models)
+outputs/
+outputs_*/
+models/
+checkpoints/
+*.keras
+*.h5
+*.pth
+*.pt
+*.ckpt
+*.joblib
+*.pkl
+*.pickle
+
+# Training logs
+logs/
+lightning_logs/
+tensorboard/
+wandb/
+
+# Configuration (if contains secrets - keep templates)
+.env
+.env.local
+secrets.yaml
+# Keep configs/ directory but ignore sensitive files
+configs/*secret*
+configs/*local*
 
 # OS
 .DS_Store
@@ -47,3 +104,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Documentation build
+docs/_build/
+site/

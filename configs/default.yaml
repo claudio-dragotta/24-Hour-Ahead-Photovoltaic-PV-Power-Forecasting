@@ -1,0 +1,45 @@
+# Default configuration for PV power forecasting
+# Override these values in model-specific configs
+
+data:
+  pv_path: "data/raw/pv_dataset.xlsx"
+  wx_path: "data/raw/wx_dataset.xlsx"
+  local_tz: "Australia/Sydney"
+  processed_dir: "data/processed"
+  lag_hours: [1, 24, 168]  # 1h, 1day, 1week
+  rolling_hours: [3, 6]     # 3h and 6h moving averages
+  include_solar: true       # Solar position features (requires pvlib)
+  include_clearsky: true    # Clear-sky irradiance (requires pvlib)
+  dropna: true              # Drop rows with NaN after feature engineering
+
+model:
+  model_type: "cnn_bilstm"  # Options: "cnn_bilstm", "tft", "lgbm"
+  horizon: 24               # Forecast horizon in hours
+  seq_len: 168              # Lookback window (hours) for sequence models
+  epochs: 50
+  batch_size: 64
+  learning_rate: 0.001
+  train_ratio: 0.7
+  val_ratio: 0.1
+  seed: 42
+  early_stopping_patience: 8
+
+lightgbm:
+  n_estimators: 500
+  learning_rate: 0.05
+  max_depth: 7
+  num_leaves: 31
+  min_child_samples: 20
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_alpha: 0.1
+  reg_lambda: 0.1
+  use_future_meteo: false   # Use future weather as features (if available)
+  future_cols: ["ghi", "dni", "dhi", "temp"]
+
+output:
+  output_dir: "outputs"
+  save_predictions: true
+  save_model: true
+  save_history: true
+  log_level: "INFO"

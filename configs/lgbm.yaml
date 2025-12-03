@@ -1,0 +1,40 @@
+# LightGBM Configuration for 24-hour ahead PV forecasting
+# Multi-horizon approach with one model per forecast hour
+
+data:
+  pv_path: "data/raw/pv_dataset.xlsx"
+  wx_path: "data/raw/wx_dataset.xlsx"
+  local_tz: "Australia/Sydney"
+  processed_dir: "data/processed"
+  lag_hours: [1, 24, 168]
+  rolling_hours: [3, 6]
+  include_solar: true
+  include_clearsky: true
+  dropna: true
+
+model:
+  model_type: "lgbm"
+  horizon: 24
+  train_ratio: 0.7
+  val_ratio: 0.1
+  seed: 42
+
+lightgbm:
+  n_estimators: 500          # Trees per model
+  learning_rate: 0.05        # Conservative for stability
+  max_depth: 7               # Moderate depth prevents overfitting
+  num_leaves: 31             # 2^depth - 1 for balanced trees
+  min_child_samples: 20      # Minimum samples per leaf
+  subsample: 0.8             # Row sampling
+  colsample_bytree: 0.8      # Column sampling
+  reg_alpha: 0.1             # L1 regularization
+  reg_lambda: 0.1            # L2 regularization
+  use_future_meteo: false    # Set true if future weather forecasts available
+  future_cols: ["ghi", "dni", "dhi", "temp", "clouds"]
+
+output:
+  output_dir: "outputs/lgbm"
+  save_predictions: true
+  save_model: true
+  save_history: true
+  log_level: "INFO"

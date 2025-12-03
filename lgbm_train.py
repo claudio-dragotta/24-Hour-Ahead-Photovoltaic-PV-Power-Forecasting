@@ -9,6 +9,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from joblib import dump
+from tqdm import tqdm
 
 from pv_forecasting.metrics import mase, rmse
 from pv_forecasting.pipeline import load_and_engineer_features, persist_processed
@@ -39,12 +40,20 @@ def add_supervised_targets(
                 if c in data.columns:
                     data[f"{c}_fut_h{h}"] = data[c].shift(-h)
 
-    data = data.dropna()
+    # Drop NA only from critical numeric features and targets, not from text columns.
+    target_cols = [f"target_h{h}" for h in range(1, horizon + 1)]
     feature_cols = [
         c
         for c in data.columns
-        if not c.startswith("target_h") and c != "series_id" and np.issubdtype(data[c].dtype, np.number)
+        if (
+            not c.startswith("target_h")
+            and c != "series_id"
+            and np.issubdtype(data[c].dtype, np.number)
+            and not data[c].isna().all()  # esclude colonne numericamente tutte NaN (es. weather_description)
+        )
     ]
+    drop_subset = feature_cols + target_cols
+    data = data.dropna(subset=drop_subset)
     targets = {h: data[f"target_h{h}"] for h in range(1, horizon + 1)}
     return data, feature_cols, targets
 
@@ -76,7 +85,11 @@ def train_lightgbm_multi_horizon(
 
     train_series = data.loc[train_mask, "pv"].values
 
-    for h in range(1, horizon + 1):
+    print(f"\n{'='*60}")
+    print(f"Training LightGBM multi-horizon models")
+    print(f"{'='*60}")
+
+    for h in tqdm(range(1, horizon + 1), desc="Training horizons", unit="model"):
         y_train = targets[h].loc[train_mask]
         y_val = targets[h].loc[val_mask]
 
@@ -160,7 +173,11 @@ def run_walk_forward(
     val_len = max(1, int(n * fold_val_frac))
     start_train = max(24, int(n * 0.5))
 
-    for fold in range(folds):
+    print(f"\n{'='*60}")
+    print(f"Running Walk-Forward Validation ({folds} folds)")
+    print(f"{'='*60}")
+
+    for fold in tqdm(range(folds), desc="Walk-forward folds", unit="fold"):
         train_end = start_train + fold * val_len
         val_end = train_end + val_len
         if val_end >= n:
@@ -172,7 +189,7 @@ def run_walk_forward(
         X_val = data.loc[val_mask, feature_cols]
         train_series = data.loc[train_mask, "pv"].values
 
-        for h in range(1, horizon + 1):
+        for h in tqdm(range(1, horizon + 1), desc=f"  Fold {fold+1}/{folds}", unit="h", leave=False):
             y_train = targets[h].loc[train_mask]
             y_val = targets[h].loc[val_mask]
             model = lgb.LGBMRegressor(
@@ -232,27 +249,49 @@ def parse_args():
 def main():
     args = parse_args()
 
+    print(f"\n{'='*60}")
+    print(f"LightGBM Multi-Horizon Training Pipeline")
+    print(f"{'='*60}")
+    print(f"Output directory: {args.outdir}")
+    print(f"Horizon: {args.horizon} hours")
+    print(f"Validation ratio: {args.val_ratio}")
+    print(f"Walk-forward folds: {args.walk_forward_folds if args.walk_forward_folds > 0 else 'disabled'}")
+    print(f"Future meteo: {'enabled' if args.use_future_meteo else 'disabled'}")
+    print(f"{'='*60}\n")
+
     out_dir = Path(args.outdir)
     (out_dir / "models").mkdir(parents=True, exist_ok=True)
 
     lag_hours = parse_int_list(args.lag_hours, default=(1, 24, 168))
     rolling_hours = parse_int_list(args.rolling_hours, default=(3, 6))
 
-    df = load_and_engineer_features(
-        Path(args.pv_path),
-        Path(args.wx_path),
-        args.local_tz,
-        lag_hours=lag_hours,
-        rolling_hours=rolling_hours,
-    )
+    print("Loading and engineering features...")
+    
+    # Check if processed data already exists
+    processed_path = Path("outputs/processed.parquet")
+    if processed_path.exists():
+        print(f"Loading pre-processed data from {processed_path}...")
+        df = pd.read_parquet(processed_path)
+        print(f"✓ Loaded {len(df)} samples with {len(df.columns)} features from cache\n")
+    else:
+        print("Processing raw data...")
+        df = load_and_engineer_features(
+            Path(args.pv_path),
+            Path(args.wx_path),
+            args.local_tz,
+            lag_hours=lag_hours,
+            rolling_hours=rolling_hours,
+        )
+        # Persist unified processed data for downstream scripts
+        persist_processed(df, Path("outputs"))
+        print(f"✓ Loaded {len(df)} samples with {len(df.columns)} features\n")
 
-    # Persist unified processed data for downstream scripts
-    persist_processed(df, Path("outputs"))
-
+    print("Creating supervised targets...")
     future_cols = ["ghi", "dni", "dhi", "temp", "humidity", "clouds", "wind_speed"]
     data, feature_cols, targets = add_supervised_targets(
         df, horizon=args.horizon, use_future_meteo=args.use_future_meteo, future_cols=future_cols
     )
+    print(f"✓ Created {len(data)} training samples with {len(feature_cols)} features\n")
 
     # Train + validate on final split
     models, preds_df, metrics = train_lightgbm_multi_horizon(
@@ -275,6 +314,15 @@ def main():
         "mase_naive_avg": float(np.mean([m["mase_naive"] for m in metrics])),
     }
     (out_dir / "metrics_summary.json").write_text(json.dumps(metric_summary, indent=2))
+
+    print(f"\n{'='*60}")
+    print(f"Training Complete - Validation Results")
+    print(f"{'='*60}")
+    print(f"RMSE (model): {metric_summary['rmse_model_avg']:.4f}")
+    print(f"RMSE (naive): {metric_summary['rmse_naive_avg']:.4f}")
+    print(f"MASE (model): {metric_summary['mase_model_avg']:.4f}")
+    print(f"MASE (naive): {metric_summary['mase_naive_avg']:.4f}")
+    print(f"{'='*60}\n")
 
     # Walk-forward evaluation (optional)
     wf_metrics: List[dict] = []
@@ -303,6 +351,17 @@ def main():
         "future_cols": future_cols,
     }
     (out_dir / "config_lgbm.json").write_text(json.dumps(config, indent=2))
+
+    print(f"\n{'='*60}")
+    print(f"All Done! Results saved to: {out_dir}")
+    print(f"{'='*60}")
+    print(f"✓ Models: {out_dir / 'models'} (24 files)")
+    print(f"✓ Predictions: {out_dir / 'predictions_val_lgbm.csv'}")
+    print(f"✓ Metrics: {out_dir / 'metrics_val_lgbm.json'}")
+    if args.walk_forward_folds > 0:
+        print(f"✓ Walk-forward metrics: {out_dir / 'metrics_walk_forward.json'}")
+    print(f"✓ Config: {out_dir / 'config_lgbm.json'}")
+    print(f"{'='*60}\n")
 
 
 if __name__ == "__main__":

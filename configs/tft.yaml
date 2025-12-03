@@ -1,0 +1,41 @@
+# Temporal Fusion Transformer (TFT) Configuration
+# State-of-the-art attention-based forecasting model
+
+data:
+  pv_path: "data/raw/pv_dataset.xlsx"
+  wx_path: "data/raw/wx_dataset.xlsx"
+  local_tz: "Australia/Sydney"
+  processed_dir: "data/processed"
+  lag_hours: [1, 24, 168]
+  rolling_hours: [3, 6]
+  include_solar: true
+  include_clearsky: true
+  dropna: true
+
+model:
+  model_type: "tft"
+  horizon: 24                # Maximum forecast horizon
+  seq_len: 168               # 7-day encoder length
+  epochs: 100
+  batch_size: 64             # Adjust based on GPU memory
+  learning_rate: 0.001
+  train_ratio: 0.7
+  val_ratio: 0.1
+  seed: 42
+  early_stopping_patience: 10
+
+# TFT-specific hyperparameters (used by pytorch-forecasting)
+tft:
+  hidden_size: 64            # Size of hidden layers
+  lstm_layers: 2             # Number of LSTM layers
+  attention_head_size: 4     # Number of attention heads
+  dropout: 0.1               # Dropout rate
+  hidden_continuous_size: 32  # Size of variable selection network
+  reduce_on_plateau_patience: 4
+
+output:
+  output_dir: "outputs/tft"
+  save_predictions: true
+  save_model: true
+  save_history: true
+  log_level: "INFO"

@@ -1,0 +1,185 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pv-forecasting"
+version = "0.1.0"
+description = "24-Hour Ahead Photovoltaic Power Forecasting with TFT + LightGBM"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Claudio Dragotta", email = "claudiodragotta@gmail.com"}
+]
+keywords = ["photovoltaic", "forecasting", "deep-learning", "lightgbm", "tft", "time-series"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+    "scikit-learn>=1.3",
+    "tqdm>=4.65",
+    "tensorflow>=2.12; platform_system != 'Darwin' or platform_machine != 'arm64'",
+    "tensorflow-macos>=2.12; platform_system == 'Darwin' and platform_machine == 'arm64'",
+    "matplotlib>=3.7",
+    "seaborn>=0.12",
+    "python-dateutil>=2.8",
+    "joblib>=1.3",
+    "pyarrow>=12.0",
+    "pvlib>=0.10",
+    "lightgbm>=4.3",
+    "optuna>=3.6",
+    "torch>=2.2",
+    "pytorch-lightning>=2.4",
+    "pytorch-forecasting>=1.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "pytest-xdist>=3.3",
+    "black>=23.0",
+    "isort>=5.12",
+    "flake8>=6.0",
+    "mypy>=1.5",
+    "pre-commit>=3.3",
+    "ipykernel>=6.25",
+    "jupyter>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting"
+Repository = "https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting"
+Documentation = "https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting#readme"
+
+[project.scripts]
+pv-train = "pv_forecasting.cli:train"
+pv-predict = "pv_forecasting.cli:predict"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pv_forecasting*"]
+exclude = ["tests*", "notebooks*", "outputs*", "data*"]
+
+[tool.setuptools.package-data]
+pv_forecasting = ["py.typed"]
+
+# Black - Code formatting
+[tool.black]
+line-length = 120
+target-version = ["py39", "py310", "py311", "py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    \.git
+  | \.venv
+  | build
+  | dist
+  | outputs
+  | outputs_lgbm
+  | outputs_tft
+  | outputs_ensemble
+)/
+'''
+
+# isort - Import sorting
+[tool.isort]
+profile = "black"
+line_length = 120
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+skip_gitignore = true
+skip = [".venv", "build", "dist", "outputs"]
+
+# mypy - Static type checking
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pvlib.*",
+    "lightgbm.*",
+    "pytorch_forecasting.*",
+    "pytorch_lightning.*",
+]
+ignore_missing_imports = true
+
+# pytest - Testing
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=pv_forecasting",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+# coverage.py - Code coverage
+[tool.coverage.run]
+source = ["pv_forecasting"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
