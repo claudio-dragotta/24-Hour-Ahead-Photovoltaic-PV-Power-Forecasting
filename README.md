@@ -123,16 +123,19 @@ This project follows professional software engineering best practices:
 │       ├── pv_dataset.xlsx        # PV production data
 │       └── wx_dataset.xlsx        # Weather data
 │
-├── scripts/                       # Utility scripts
-│   ├── preprocess_data.py         # Complete data preprocessing pipeline
-│   └── ensemble.py                # Ensemble model combination
-│
-├── training_scripts/              # All model training scripts
-│   ├── train_cnn_bilstm.py        # CNN-BiLSTM training
-│   ├── train_lgbm.py              # LightGBM multi-horizon training
-│   ├── train_tft.py               # TFT training
-│   ├── predict.py                 # Inference script
-│   └── README.md                  # Training scripts guide
+├── scripts/                       # All executable scripts (organized by purpose)
+│   ├── README.md                  # Scripts documentation
+│   ├── data/                      # Data processing
+│   │   └── preprocess_data.py     # Complete preprocessing pipeline
+│   ├── training/                  # Model training
+│   │   ├── README.md              # Training guide
+│   │   ├── train_lgbm.py          # LightGBM multi-horizon training
+│   │   ├── train_tft.py           # TFT training
+│   │   └── train_cnn_bilstm.py    # CNN-BiLSTM training
+│   ├── inference/                 # Prediction/deployment
+│   │   └── predict.py             # Inference script
+│   └── evaluation/                # Model evaluation
+│       └── ensemble.py            # Ensemble optimization
 │
 ├── outputs/                       # Model outputs (generated)
 ├── outputs_lgbm/                  # LightGBM outputs (generated)
@@ -478,13 +481,13 @@ PY
 
 2) **LightGBM multi‑orizzonte (24 modelli)**
 ```bash
-python training_scripts/train_lgbm.py --outdir outputs_lgbm --walk-forward-folds 3  # opzionale WF
+python scripts/training/train_lgbm.py --outdir outputs_lgbm --walk-forward-folds 3  # opzionale WF
 ```
    - Salva modelli per h=1..24 in `outputs_lgbm/models/`, predizioni/metriche validation e (se richiesto) walk‑forward.
 
 3) **TFT (PyTorch Forecasting)**
 ```bash
-python training_scripts/train_tft.py --outdir outputs_tft --use-future-meteo   # se hai meteo future
+python scripts/training/train_tft.py --outdir outputs_tft --use-future-meteo   # se hai meteo future
 ```
    - Crea dataset encoder 168h / decoder 24h, quantile loss (0.1/0.5/0.9), early stopping, checkpoint `tft-best.ckpt`, predizioni/metriche validation per orizzonte.
 
@@ -499,7 +502,7 @@ python scripts/ensemble.py \
 
 5) **Inference (dataset prof)**
 ```bash
-python predict.py \
+python scripts/inference/predict.py \
   --pv-path data/raw/pv_dataset.xlsx \
   --wx-path data/raw/wx_dataset.xlsx \
   --future-wx-path <opzionale NWP> \
@@ -518,13 +521,13 @@ python predict.py \
 Run training with default parameters:
 
 ```bash
-python training_scripts/train_cnn_bilstm.py --outdir outputs_cnn
+python scripts/training/train_cnn_bilstm.py --outdir outputs_cnn
 ```
 
 With custom parameters:
 
 ```bash
-python training_scripts/train_cnn_bilstm.py \
+python scripts/training/train_cnn_bilstm.py \
   --pv-path data/raw/pv_dataset.xlsx \
   --wx-path data/raw/wx_dataset.xlsx \
   --local-tz Australia/Sydney \
@@ -538,13 +541,13 @@ python training_scripts/train_cnn_bilstm.py \
 ### LightGBM Baseline (24 regressori)
 
 ```bash
-python training_scripts/train_lgbm.py --outdir outputs_lgbm
+python scripts/training/train_lgbm.py --outdir outputs_lgbm
 ```
 
 ### Temporal Fusion Transformer (PyTorch Forecasting)
 
 ```bash
-python training_scripts/train_tft.py --outdir outputs_tft --use-future-meteo   # se hai NWP/meteo future
+python scripts/training/train_tft.py --outdir outputs_tft --use-future-meteo   # se hai NWP/meteo future
 ```
 
 ### Ensemble e Inference
@@ -555,7 +558,7 @@ python training_scripts/train_tft.py --outdir outputs_tft --use-future-meteo   #
   ```
 - Previsione day-ahead (auto-switch con/senza meteo future se forniti):
   ```bash
-  python predict.py --pv-path data/raw/pv_dataset.xlsx --wx-path data/raw/wx_dataset.xlsx --future-wx-path <opzionale>
+  python scripts/inference/predict.py --pv-path data/raw/pv_dataset.xlsx --wx-path data/raw/wx_dataset.xlsx --future-wx-path <opzionale>
   ```
 
 ### Data Preparation
@@ -672,9 +675,9 @@ python -c "import torch; print(torch.cuda.is_available())"
 
 ### New Training Modes
 
-- Baseline (current): `python training_scripts/train_cnn_bilstm.py` trains CNN‑BiLSTM.
-- LightGBM (new): `python training_scripts/train_cnn_bilstm.py --model lightgbm` trains 24 horizons with engineered features.
-- TFT (new): `python training_scripts/train_tft.py` (or `python training_scripts/train_cnn_bilstm.py --model tft`) trains a Temporal Fusion Transformer with quantile loss.
+- Baseline (current): `python scripts/training/train_cnn_bilstm.py` trains CNN‑BiLSTM.
+- LightGBM (new): `python scripts/training/train_cnn_bilstm.py --model lightgbm` trains 24 horizons with engineered features.
+- TFT (new): `python scripts/training/train_tft.py` (or `python scripts/training/train_cnn_bilstm.py --model tft`) trains a Temporal Fusion Transformer with quantile loss.
 - Ensemble (new): `python scripts/ensemble.py` finds validation weights and merges predictions.
 
 Notes:
