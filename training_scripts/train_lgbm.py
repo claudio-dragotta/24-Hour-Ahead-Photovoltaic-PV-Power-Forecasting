@@ -40,7 +40,7 @@ def add_supervised_targets(
                 if c in data.columns:
                     data[f"{c}_fut_h{h}"] = data[c].shift(-h)
 
-    # Drop NA only from critical numeric features and targets, not from text columns.
+    # Select numeric feature columns (includes encoded weather_description)
     target_cols = [f"target_h{h}" for h in range(1, horizon + 1)]
     feature_cols = [
         c
@@ -49,7 +49,7 @@ def add_supervised_targets(
             not c.startswith("target_h")
             and c != "series_id"
             and np.issubdtype(data[c].dtype, np.number)
-            and not data[c].isna().all()  # esclude colonne numericamente tutte NaN (es. weather_description)
+            and not data[c].isna().all()  # exclude columns that are entirely NaN
         )
     ]
     drop_subset = feature_cols + target_cols
@@ -340,6 +340,31 @@ def main():
     print(f"MASE (naive): {metric_summary['mase_naive_avg']:.4f}")
     print(f"{'='*60}\n")
 
+    # Feature importance analysis (averaged across all horizons)
+    print(f"{'='*60}")
+    print(f"FEATURE IMPORTANCE (Top 15)")
+    print(f"{'='*60}")
+
+    # Aggregate feature importances from all horizon models
+    feat_importance_dict = {feat: [] for feat in feature_cols}
+    for h, model in models.items():
+        for feat, imp in zip(feature_cols, model.feature_importances_):
+            feat_importance_dict[feat].append(imp)
+
+    # Compute mean importance across all horizons
+    feat_importance_avg = {feat: np.mean(imps) for feat, imps in feat_importance_dict.items()}
+    feat_importance_sorted = sorted(feat_importance_avg.items(), key=lambda x: x[1], reverse=True)
+
+    # Display top 15 features
+    for i, (feat, imp) in enumerate(feat_importance_sorted[:15], 1):
+        print(f"{i:2d}. {feat:25s} importance: {imp:10.1f}")
+
+    # Save full feature importances to JSON
+    (out_dir / "feature_importance_lgbm.json").write_text(
+        json.dumps([{"feature": f, "importance": float(imp)} for f, imp in feat_importance_sorted], indent=2)
+    )
+    print(f"\n✓ Full feature importance saved to: feature_importance_lgbm.json\n")
+
     # Walk-forward evaluation (optional)
     wf_metrics: List[dict] = []
     if args.walk_forward_folds and args.walk_forward_folds > 0:
@@ -376,6 +401,7 @@ def main():
     print(f"✓ Models: {out_dir / 'models'} (24 files)")
     print(f"✓ Predictions: {out_dir / 'predictions_test_lgbm.csv'}")
     print(f"✓ Metrics: {out_dir / 'metrics_test_lgbm.json'}")
+    print(f"✓ Feature importance: {out_dir / 'feature_importance_lgbm.json'}")
     if args.walk_forward_folds > 0:
         print(f"✓ Walk-forward metrics: {out_dir / 'metrics_walk_forward.json'}")
     print(f"✓ Config: {out_dir / 'config_lgbm.json'}")
