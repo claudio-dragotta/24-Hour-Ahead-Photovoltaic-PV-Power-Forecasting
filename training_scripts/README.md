@@ -43,8 +43,8 @@ After training multiple models, combine them for best performance:
 
 ```bash
 python scripts/ensemble.py \
-  --tft outputs_tft/predictions_val_tft.csv \
-  --lgbm outputs_lgbm/predictions_val_lgbm.csv \
+  --tft outputs_tft/predictions_test_tft.csv \
+  --lgbm outputs_lgbm/predictions_test_lgbm.csv \
   --outdir outputs_ensemble
 ```
 

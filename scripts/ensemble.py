@@ -39,13 +39,13 @@ def parse_args() -> argparse.Namespace:
         "--tft",
         type=str,
         default=None,
-        help="path to TFT predictions CSV (predictions_val_tft.csv)"
+        help="path to TFT predictions CSV (predictions_test_tft.csv)"
     )
     ap.add_argument(
         "--lgbm",
         type=str,
         default=None,
-        help="path to LightGBM predictions CSV (predictions_val_lgbm.csv)"
+        help="path to LightGBM predictions CSV (predictions_test_lgbm.csv)"
     )
     ap.add_argument(
         "--bilstm",

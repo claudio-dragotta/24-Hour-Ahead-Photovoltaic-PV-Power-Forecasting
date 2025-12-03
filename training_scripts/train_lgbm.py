@@ -58,11 +58,15 @@ def add_supervised_targets(
     return data, feature_cols, targets
 
 
-def chronological_masks(time_idx: pd.Series, train_ratio: float) -> Tuple[pd.Series, pd.Series]:
-    cutoff = int(time_idx.max() * train_ratio)
-    train_mask = time_idx <= cutoff
-    val_mask = time_idx > cutoff
-    return train_mask, val_mask
+def chronological_masks(time_idx: pd.Series, train_ratio: float, val_ratio: float) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """Split time_idx chronologically into train/val/test masks."""
+    max_idx = time_idx.max()
+    cutoff_train = int(max_idx * train_ratio)
+    cutoff_val = int(max_idx * (train_ratio + val_ratio))
+    train_mask = time_idx <= cutoff_train
+    val_mask = (time_idx > cutoff_train) & (time_idx <= cutoff_val)
+    test_mask = time_idx > cutoff_val
+    return train_mask, val_mask, test_mask
 
 
 def train_lightgbm_multi_horizon(
@@ -71,13 +75,20 @@ def train_lightgbm_multi_horizon(
     targets: Dict[int, pd.Series],
     horizon: int,
     train_ratio: float,
+    val_ratio: float,
     out_dir: Path,
     seed: int,
 ) -> Tuple[Dict[int, lgb.LGBMRegressor], pd.DataFrame, List[dict]]:
-    """Train one LightGBM regressor per horizon; return models, preds and metrics."""
-    train_mask, val_mask = chronological_masks(data["time_idx"], train_ratio=train_ratio)
+    """Train one LightGBM regressor per horizon with train/val/test split.
+
+    - train: for model training
+    - val: for early stopping
+    - test: for final evaluation (never seen during training)
+    """
+    train_mask, val_mask, test_mask = chronological_masks(data["time_idx"], train_ratio=train_ratio, val_ratio=val_ratio)
     X_train = data.loc[train_mask, feature_cols]
     X_val = data.loc[val_mask, feature_cols]
+    X_test = data.loc[test_mask, feature_cols]
 
     models: Dict[int, lgb.LGBMRegressor] = {}
     metrics: List[dict] = []
@@ -92,6 +103,7 @@ def train_lightgbm_multi_horizon(
     for h in tqdm(range(1, horizon + 1), desc="Training horizons", unit="model"):
         y_train = targets[h].loc[train_mask]
         y_val = targets[h].loc[val_mask]
+        y_test = targets[h].loc[test_mask]
 
         model = lgb.LGBMRegressor(
             n_estimators=1200,
@@ -114,13 +126,14 @@ def train_lightgbm_multi_horizon(
         )
         models[h] = model
 
-        y_pred_val = model.predict(X_val)
-        naive_val = data["pv"].shift(24 - h).loc[val_mask]
+        # Evaluate on TEST set (never seen during training!)
+        y_pred_test = model.predict(X_test)
+        naive_test = data["pv"].shift(24 - h).loc[test_mask]
 
-        valid_mask = ~np.isnan(naive_val.values)
-        y_true_valid = y_val.values[valid_mask]
-        y_pred_valid = y_pred_val[valid_mask]
-        naive_valid = naive_val.values[valid_mask]
+        valid_mask = ~np.isnan(naive_test.values)
+        y_true_valid = y_test.values[valid_mask]
+        y_pred_valid = y_pred_test[valid_mask]
+        naive_valid = naive_test.values[valid_mask]
 
         rmse_model = rmse(y_true_valid, y_pred_valid)
         rmse_naive = rmse(y_true_valid, naive_valid)
@@ -136,19 +149,19 @@ def train_lightgbm_multi_horizon(
             }
         )
 
-        val_idx = data.index[val_mask]
-        val_time_idx = data.loc[val_mask, "time_idx"].astype(int).values
-        for i in range(len(y_val)):
-            base_ts = val_idx[i]
+        test_idx = data.index[test_mask]
+        test_time_idx = data.loc[test_mask, "time_idx"].astype(int).values
+        for i in range(len(y_test)):
+            base_ts = test_idx[i]
             pred_rows.append(
                 {
-                    "time_idx": int(val_time_idx[i]),
+                    "time_idx": int(test_time_idx[i]),
                     "origin_timestamp_utc": base_ts.isoformat(),
                     "forecast_timestamp_utc": (base_ts + pd.Timedelta(hours=h)).isoformat(),
                     "horizon_h": h,
-                    "y_true": float(y_val.iloc[i]),
-                    "y_pred": float(y_pred_val[i]),
-                    "y_naive": float(naive_val.iloc[i]) if not pd.isna(naive_val.iloc[i]) else np.nan,
+                    "y_true": float(y_test.iloc[i]),
+                    "y_pred": float(y_pred_test[i]),
+                    "y_naive": float(naive_test.iloc[i]) if not pd.isna(naive_test.iloc[i]) else np.nan,
                 }
             )
 
@@ -238,7 +251,9 @@ def parse_args():
     ap.add_argument("--lag-hours", type=str, default="1,24,168")
     ap.add_argument("--rolling-hours", type=str, default="3,6")
     ap.add_argument("--outdir", type=str, default="outputs_lgbm")
-    ap.add_argument("--val-ratio", type=float, default=0.2, help="Validation share (chronological split)")
+    ap.add_argument("--train-ratio", type=float, default=0.6, help="Training set ratio (chronological split)")
+    ap.add_argument("--val-ratio", type=float, default=0.2, help="Validation set ratio (chronological split)")
+    ap.add_argument("--test-ratio", type=float, default=0.2, help="Test set ratio (chronological split)")
     ap.add_argument("--use-future-meteo", action="store_true", help="Add future meteo covariates if available")
     ap.add_argument("--walk-forward-folds", type=int, default=0, help="Run optional walk-forward evaluation")
     ap.add_argument("--fold-val-frac", type=float, default=0.1, help="Validation fraction per fold for walk-forward")
@@ -254,7 +269,7 @@ def main():
     print(f"{'='*60}")
     print(f"Output directory: {args.outdir}")
     print(f"Horizon: {args.horizon} hours")
-    print(f"Validation ratio: {args.val_ratio}")
+    print(f"Data split: Train {args.train_ratio:.1%} | Val {args.val_ratio:.1%} | Test {args.test_ratio:.1%}")
     print(f"Walk-forward folds: {args.walk_forward_folds if args.walk_forward_folds > 0 else 'disabled'}")
     print(f"Future meteo: {'enabled' if args.use_future_meteo else 'disabled'}")
     print(f"{'='*60}\n")
@@ -293,19 +308,20 @@ def main():
     )
     print(f"✓ Created {len(data)} training samples with {len(feature_cols)} features\n")
 
-    # Train + validate on final split
+    # Train + validate + test with 3-way chronological split
     models, preds_df, metrics = train_lightgbm_multi_horizon(
         data=data,
         feature_cols=feature_cols,
         targets=targets,
         horizon=args.horizon,
-        train_ratio=1 - args.val_ratio,
+        train_ratio=args.train_ratio,
+        val_ratio=args.val_ratio,
         out_dir=out_dir,
         seed=args.seed,
     )
 
-    preds_df.to_csv(out_dir / "predictions_val_lgbm.csv", index=False)
-    (out_dir / "metrics_val_lgbm.json").write_text(json.dumps(metrics, indent=2))
+    preds_df.to_csv(out_dir / "predictions_test_lgbm.csv", index=False)
+    (out_dir / "metrics_test_lgbm.json").write_text(json.dumps(metrics, indent=2))
 
     metric_summary = {
         "rmse_model_avg": float(np.mean([m["rmse_model"] for m in metrics])),
@@ -342,7 +358,9 @@ def main():
         "horizon": args.horizon,
         "lag_hours": lag_hours,
         "rolling_hours": rolling_hours,
+        "train_ratio": args.train_ratio,
         "val_ratio": args.val_ratio,
+        "test_ratio": args.test_ratio,
         "use_future_meteo": args.use_future_meteo,
         "walk_forward_folds": args.walk_forward_folds,
         "fold_val_frac": args.fold_val_frac,
@@ -356,8 +374,8 @@ def main():
     print(f"All Done! Results saved to: {out_dir}")
     print(f"{'='*60}")
     print(f"✓ Models: {out_dir / 'models'} (24 files)")
-    print(f"✓ Predictions: {out_dir / 'predictions_val_lgbm.csv'}")
-    print(f"✓ Metrics: {out_dir / 'metrics_val_lgbm.json'}")
+    print(f"✓ Predictions: {out_dir / 'predictions_test_lgbm.csv'}")
+    print(f"✓ Metrics: {out_dir / 'metrics_test_lgbm.json'}")
     if args.walk_forward_folds > 0:
         print(f"✓ Walk-forward metrics: {out_dir / 'metrics_walk_forward.json'}")
     print(f"✓ Config: {out_dir / 'config_lgbm.json'}")

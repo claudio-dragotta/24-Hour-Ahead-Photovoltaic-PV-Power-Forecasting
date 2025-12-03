@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
                     help="encoder length in hours (default: 168 = 7 days)")
     ap.add_argument("--horizon", type=int, default=24,
                     help="prediction horizon in hours")
-    ap.add_argument("--epochs", type=int, default=50,
+    ap.add_argument("--epochs", type=int, default=100,
                     help="maximum training epochs")
     ap.add_argument("--batch-size", type=int, default=64,
                     help="training batch size")
@@ -63,8 +63,12 @@ def parse_args() -> argparse.Namespace:
                     help="output directory for checkpoints and predictions")
     ap.add_argument("--use-future-meteo", action="store_true",
                     help="use future weather covariates if available (NWP mode)")
+    ap.add_argument("--train-ratio", type=float, default=0.6,
+                    help="training set ratio (chronological split)")
     ap.add_argument("--val-ratio", type=float, default=0.2,
                     help="validation set ratio (chronological split)")
+    ap.add_argument("--test-ratio", type=float, default=0.2,
+                    help="test set ratio (chronological split)")
     ap.add_argument("--seed", type=int, default=42,
                     help="random seed for reproducibility")
     return ap.parse_args()
@@ -139,14 +143,20 @@ def main() -> None:
     max_prediction_length = args.horizon
     logger.info(f"encoder length: {max_encoder_length}h, prediction horizon: {max_prediction_length}h")
 
-    # Chronological train/validation split
-    train_ratio = 1 - args.val_ratio
-    cutoff = int(df["time_idx"].max() * train_ratio)
-    logger.info(f"chronological split: train ratio={train_ratio:.2f}, cutoff time_idx={cutoff}")
+    # Chronological train/validation/test split (3-way)
+    max_time_idx = df["time_idx"].max()
+    cutoff_train = int(max_time_idx * args.train_ratio)
+    cutoff_val = int(max_time_idx * (args.train_ratio + args.val_ratio))
 
+    logger.info(f"chronological 3-way split:")
+    logger.info(f"  train: 0 to {cutoff_train} ({args.train_ratio:.1%})")
+    logger.info(f"  validation: {cutoff_train+1} to {cutoff_val} ({args.val_ratio:.1%})")
+    logger.info(f"  test: {cutoff_val+1} to {max_time_idx} ({args.test_ratio:.1%})")
+
+    # Training dataset
     logger.info("creating training dataset...")
     training = TimeSeriesDataSet(
-        df[df["time_idx"] <= cutoff],
+        df[df["time_idx"] <= cutoff_train],
         time_idx="time_idx",
         target=target,
         group_ids=["series_id"],
@@ -158,17 +168,28 @@ def main() -> None:
         allow_missing_timesteps=True,
     )
 
+    # Validation dataset (for early stopping)
     logger.info("creating validation dataset...")
     validation = TimeSeriesDataSet.from_dataset(
         training,
-        df[df["time_idx"] > cutoff],
+        df[(df["time_idx"] > cutoff_train) & (df["time_idx"] <= cutoff_val)],
+        predict=False,
+        stop_randomization=True
+    )
+
+    # Test dataset (for final evaluation - NEVER seen during training!)
+    logger.info("creating test dataset...")
+    test_dataset = TimeSeriesDataSet.from_dataset(
+        training,
+        df[df["time_idx"] > cutoff_val],
         predict=False,
         stop_randomization=True
     )
 
     train_loader = training.to_dataloader(train=True, batch_size=args.batch_size, num_workers=0)
     val_loader = validation.to_dataloader(train=False, batch_size=args.batch_size, num_workers=0)
-    logger.info(f"train batches: {len(train_loader)}, val batches: {len(val_loader)}")
+    test_loader = test_dataset.to_dataloader(train=False, batch_size=args.batch_size, num_workers=0)
+    logger.info(f"train batches: {len(train_loader)}, val batches: {len(val_loader)}, test batches: {len(test_loader)}")
 
     # Build Temporal Fusion Transformer model
     logger.info("building temporal fusion transformer model...")
@@ -225,9 +246,9 @@ def main() -> None:
     else:
         logger.warning("no best checkpoint found, using final model")
 
-    # Generate predictions on validation set
-    logger.info("generating predictions on validation set...")
-    preds, x = tft.predict(val_loader, return_x=True, mode="prediction")
+    # Generate predictions on TEST set (never seen during training!)
+    logger.info("generating predictions on TEST set...")
+    preds, x = tft.predict(test_loader, return_x=True, mode="prediction")
     preds_np = preds.detach().cpu().numpy()  # shape (N, horizon)
     decoder_time_idx = x["decoder_time_idx"].detach().cpu().numpy()
     encoder_time_idx = x["encoder_time_idx"].detach().cpu().numpy()
@@ -241,7 +262,7 @@ def main() -> None:
         h: df["pv"].shift(24 - h).reset_index(drop=True)
         for h in range(1, args.horizon + 1)
     }
-    train_series = df.loc[df["time_idx"] <= cutoff, "pv"].values
+    train_series = df.loc[df["time_idx"] <= cutoff_train, "pv"].values
 
     # Export predictions in long format with timestamps
     logger.info("exporting predictions in long format...")
@@ -273,7 +294,7 @@ def main() -> None:
             })
 
     pred_df = pd.DataFrame(rows)
-    pred_path = out_dir / "predictions_val_tft.csv"
+    pred_path = out_dir / "predictions_test_tft.csv"
     pred_df.to_csv(pred_path, index=False)
     logger.info(f"saved {len(pred_df)} predictions to {pred_path}")
 
@@ -309,8 +330,8 @@ def main() -> None:
         "mase_naive_avg": float(np.mean([m["mase_naive"] for m in metrics])),
     }
 
-    metrics_path = out_dir / "metrics_val_tft.json"
-    (out_dir / "metrics_val_tft.json").write_text(json.dumps(metrics, indent=2))
+    metrics_path = out_dir / "metrics_test_tft.json"
+    (out_dir / "metrics_test_tft.json").write_text(json.dumps(metrics, indent=2))
     logger.info(f"saved per-horizon metrics to {metrics_path}")
 
     summary_path = out_dir / "metrics_summary.json"
@@ -330,7 +351,9 @@ def main() -> None:
         "dropout": args.dropout,
         "learning_rate": args.learning_rate,
         "use_future_meteo": args.use_future_meteo,
+        "train_ratio": args.train_ratio,
         "val_ratio": args.val_ratio,
+        "test_ratio": args.test_ratio,
         "best_model_path": str(best_path) if best_path else None,
         "known_future": sorted(set(known_future)),
         "past_unknown": sorted(set(past_unknown)),
