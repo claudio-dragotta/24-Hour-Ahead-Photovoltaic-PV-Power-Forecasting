@@ -215,11 +215,73 @@ The forecasting model requires **synchronized** PV production and weather data a
 
 ### Merged Dataset Characteristics
 
-- **Total Records**: 17,542 hourly observations
+- **Total Records**: 17,542 hourly observations (raw) → 17,374 after feature engineering and lag removal
 - **Period**: June 30, 2010 - June 30, 2012 (2 years)
-- **Completeness**: 99.98% (only 3 NaN values in PV)
-- **Columns**: 14 (1 PV + 13 weather features)
+- **Completeness**: 100% (no NaN values after preprocessing)
+- **Columns**: 14 (raw) → 45 (after feature engineering)
 - **Validation**: PV-GHI correlation = 0.905 (excellent physical alignment)
+
+### Processed Dataset Features (45 total)
+
+After running `python scripts/preprocess_data.py`, the final dataset includes:
+
+#### Target Variable (1)
+- `pv`: Normalized PV power output (0-1 scale, normalized on 82.41 kWp capacity)
+
+#### Meteorological Features (8)
+- `temp`: Temperature (K)
+- `humidity`: Relative humidity (%)
+- `wind_speed`: Wind speed (m/s)
+- `clouds`: Cloud cover (%)
+- `rain_1h`: Precipitation in last hour (mm)
+- `pressure`: Atmospheric pressure (hPa)
+- `dew_point`: Dew point temperature (K)
+- `weather_description`: **Encoded weather conditions (0-10 scale)**
+  - 10.0 = clear sky/sunny (maximum PV production)
+  - 8.0 = few clouds (80-90% production)
+  - 6.0 = scattered clouds (60-70% production)
+  - 4.0 = overcast/cloudy (40-50% production)
+  - 2.0 = light rain (20-30% production)
+  - 1.0 = heavy rain/storm (10-20% production)
+  - 0.0 = fog/mist (0-10% production)
+
+#### Solar Irradiance (3)
+- `ghi`: Global Horizontal Irradiance (W/m²)
+- `dni`: Direct Normal Irradiance (W/m²)
+- `dhi`: Diffuse Horizontal Irradiance (W/m²)
+
+#### Physics-Based Features (7)
+- `sp_zenith`: Solar zenith angle (degrees)
+- `sp_azimuth`: Solar azimuth angle (degrees)
+- `cs_ghi`: Clear-sky Global Horizontal Irradiance (W/m²)
+- `cs_dni`: Clear-sky Direct Normal Irradiance (W/m²)
+- `cs_dhi`: Clear-sky Diffuse Horizontal Irradiance (W/m²)
+- `kc`: **Clearness index** = measured_GHI / clearsky_GHI
+  - 1.0 = perfect clear sky
+  - 0.5 = 50% blocked by clouds
+  - 0.0 = nighttime or fully overcast
+
+#### Time Features (4)
+- `hour_sin`, `hour_cos`: Cyclical hour-of-day encoding (0-23h)
+- `doy_sin`, `doy_cos`: Cyclical day-of-year encoding (1-365/366)
+
+#### Lag Features (12)
+Historical values at t-1, t-24 (1 day), t-168 (1 week):
+- `pv_lag1`, `pv_lag24`, `pv_lag168`
+- `ghi_lag1`, `ghi_lag24`, `ghi_lag168`
+- `dni_lag1`, `dni_lag24`, `dni_lag168`
+- `dhi_lag1`, `dhi_lag24`, `dhi_lag168`
+
+#### Rolling Statistics (6)
+Moving averages over 3h and 6h windows:
+- `pv_roll3h`, `pv_roll6h`
+- `ghi_roll3h`, `ghi_roll6h`
+- `dni_roll3h`, `dni_roll6h`
+
+#### Metadata (4)
+- `lat`, `lon`: Site location coordinates
+- `time_idx`: Sequential integer index (0, 1, 2, ...)
+- `series_id`: Constant identifier "pv_site_1"
 
 ### Dataset Generation
 
