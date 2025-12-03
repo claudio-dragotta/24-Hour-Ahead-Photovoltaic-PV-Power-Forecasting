@@ -1,41 +1,43 @@
 # Temporal Fusion Transformer (TFT) Configuration
-# State-of-the-art attention-based forecasting model
+# State-of-the-art attention-based forecasting model for 24h-ahead PV power prediction
 
 data:
   pv_path: "data/raw/pv_dataset.xlsx"
   wx_path: "data/raw/wx_dataset.xlsx"
+  processed_path: "outputs/processed.parquet"  # Preferred: pre-processed parquet for speed
   local_tz: "Australia/Sydney"
   processed_dir: "data/processed"
   lag_hours: [1, 24, 168]
-  rolling_hours: [3, 6]
+  rolling_hours: [3, 6, 12, 24]
   include_solar: true
   include_clearsky: true
   dropna: true
 
 model:
   model_type: "tft"
-  horizon: 24                # Maximum forecast horizon
-  seq_len: 168               # 7-day encoder length
-  epochs: 100
+  horizon: 24                # 24-hour forecast horizon
+  seq_len: 168               # 7-day encoder length (168 hours)
+  epochs: 50                 # Maximum training epochs (early stopping active)
   batch_size: 64             # Adjust based on GPU memory
-  learning_rate: 0.001
-  train_ratio: 0.7
-  val_ratio: 0.1
+  learning_rate: 0.001       # Initial learning rate (Adam optimizer)
+  val_ratio: 0.2             # Validation split ratio (chronological)
   seed: 42
-  early_stopping_patience: 10
+  use_future_meteo: false    # Set to true if NWP forecasts available
 
-# TFT-specific hyperparameters (used by pytorch-forecasting)
+# TFT-specific hyperparameters (PyTorch Forecasting)
 tft:
   hidden_size: 64            # Size of hidden layers
   lstm_layers: 2             # Number of LSTM layers
-  attention_head_size: 4     # Number of attention heads
-  dropout: 0.1               # Dropout rate
-  hidden_continuous_size: 32  # Size of variable selection network
-  reduce_on_plateau_patience: 4
+  attention_heads: 4         # Number of attention heads
+  dropout: 0.2               # Dropout rate for regularization
+  hidden_continuous_size: 32 # Size of variable selection network
+  reduce_on_plateau_patience: 3
+  early_stopping_patience: 8
+  quantiles: [0.1, 0.5, 0.9] # Quantile loss targets
 
 output:
-  output_dir: "outputs/tft"
+  output_dir: "outputs_tft"
   save_predictions: true
   save_model: true
-  save_history: true
+  save_metrics: true
   log_level: "INFO"
