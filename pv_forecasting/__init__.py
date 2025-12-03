@@ -16,5 +16,11 @@ __all__ = [
     "window",
     "metrics",
     "model",
+    "models",
     "pipeline",
+    "config",
+    "logger",
+    "training",
+    "inference",
+    "cli",
 ]
