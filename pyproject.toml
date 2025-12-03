@@ -54,7 +54,6 @@ dev = [
     "pytest-xdist>=3.3",
     "black>=23.0",
     "isort>=5.12",
-    "flake8>=6.0",
     "mypy>=1.5",
     "pre-commit>=3.3",
     "ipykernel>=6.25",

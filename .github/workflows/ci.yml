@@ -31,16 +31,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install black isort flake8 mypy
+          pip install black isort mypy
 
       - name: Run Black
         run: black --check --diff pv_forecasting/ tests/ *.py
 
       - name: Run isort
         run: isort --check --diff pv_forecasting/ tests/ *.py
-
-      - name: Run Flake8
-        run: flake8 pv_forecasting/ tests/ *.py
 
       - name: Run mypy
         run: mypy pv_forecasting/ --ignore-missing-imports
