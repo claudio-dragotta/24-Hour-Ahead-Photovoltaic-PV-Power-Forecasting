@@ -119,17 +119,12 @@ This project follows professional software engineering best practices:
 │
 ├── data/                          # Data directory
 │   ├── README.md                  # Data documentation
-│   ├── raw/                       # Original datasets
-│   │   ├── pv_dataset.xlsx        # PV production data
-│   │   └── wx_dataset.xlsx        # Weather data
-│   └── processed/                 # Processed datasets
-│       └── merged_dataset.csv     # Merged and aligned data
+│   └── raw/                       # Original datasets
+│       ├── pv_dataset.xlsx        # PV production data
+│       └── wx_dataset.xlsx        # Weather data
 │
 ├── scripts/                       # Utility scripts
-│   ├── merge_datasets.py          # Dataset merging script
-│   ├── verify_merge.py            # Data integrity verification
-│   ├── check_merged.py            # Quick data check
-│   ├── analyze_errors.py          # Error analysis utilities
+│   ├── preprocess_data.py         # Complete data preprocessing pipeline
 │   └── ensemble.py                # Ensemble model combination
 │
 ├── training_scripts/              # All model training scripts
@@ -283,19 +278,44 @@ Moving averages over 3h and 6h windows:
 - `time_idx`: Sequential integer index (0, 1, 2, ...)
 - `series_id`: Constant identifier "pv_site_1"
 
-### Dataset Generation
+### Dataset Processing Pipeline
 
-Generate the merged dataset:
+The project uses a streamlined 2-stage data processing pipeline:
+
+#### Stage 1: Raw Data
+**Location:** `data/raw/`
+
+Two Excel files containing the source data:
+- `pv_dataset.xlsx`: PV production measurements (2 sheets covering 2010-2012, 17,542 total rows)
+- `wx_dataset.xlsx`: Weather observations (2 sheets covering 2010-2012, 17,544 total rows)
+
+#### Stage 2: Processed Dataset (Ready for Training)
+**Location:** `outputs/processed.parquet`
+
+A single script processes everything in one step:
 
 ```bash
-python scripts/merge_datasets.py
+python scripts/preprocess_data.py
 ```
 
-Verify data integrity:
+**What this script does:**
+1. Loads both raw Excel files
+2. Merges them with timezone-aware alignment (UTC)
+3. Validates temporal alignment (PV-GHI correlation = 0.905)
+4. Applies complete feature engineering:
+   - Physics-based features (solar position, clear-sky, clearness index)
+   - Weather description encoding (text → numerical 0-10 scale)
+   - Temporal features (cyclical time, lags, rolling statistics)
+5. Cleans data (fills NaN, removes lag initialization rows)
+6. Saves optimized Parquet format
 
-```bash
-python scripts/verify_merge.py
-```
+**Output characteristics:**
+- 17,374 samples (after lag removal)
+- 45 features (target + 44 engineered features)
+- 0% NaN values (100% complete)
+- 1.88 MB file size (fast loading, 10x faster than CSV)
+
+**All training scripts use this file** with the `--processed-path outputs/processed.parquet` argument.
 
 ---
 
@@ -539,17 +559,18 @@ python training_scripts/train_tft.py --outdir outputs_tft --use-future-meteo   #
 
 ### Data Preparation
 
-Generate the merged dataset:
+Generate the complete preprocessed dataset with all features:
 
 ```bash
-python scripts/merge_datasets.py
+python scripts/preprocess_data.py
 ```
 
-Verify data integrity:
-
-```bash
-python scripts/verify_merge.py
-```
+This script:
+- Loads raw PV and weather Excel files
+- Merges them with timezone-aware UTC alignment
+- Applies complete feature engineering (45 features total)
+- Validates data quality and alignment
+- Saves to `outputs/processed.parquet` (ready for training)
 
 ---
 
