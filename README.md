@@ -43,7 +43,7 @@ This project follows professional software engineering best practices:
 
 - **Comprehensive Testing**: Full test suite with pytest (40+ tests covering features, metrics, data processing, and pipeline integration)
 - **CI/CD Pipeline**: GitHub Actions workflow for automated testing, linting, and building across Python 3.9-3.12
-- **Code Quality**: Automated formatting (Black), import sorting (isort), linting (flake8), and type checking (mypy)
+- **Code Quality**: Automated formatting (Black), import sorting (isort), and type checking (mypy)
 - **Pre-commit Hooks**: Automatic code quality checks before every commit
 - **Modern Packaging**: Full `pyproject.toml` setup with proper dependencies and metadata
 - **Structured Logging**: Professional logging framework for debugging and monitoring
@@ -95,8 +95,6 @@ This project follows professional software engineering best practices:
 ├── .github/workflows/             # CI/CD pipelines
 │   └── ci.yml                     # Automated testing & linting
 ├── .pre-commit-config.yaml        # Pre-commit hooks configuration
-├── .flake8                        # Flake8 linting configuration
-├── .pylintrc                      # Pylint configuration
 ├── .gitignore                     # Git ignore rules
 │
 ├── pv_forecasting/                # Main Python package
@@ -399,9 +397,6 @@ black pv_forecasting/ tests/ *.py
 # Sort imports with isort
 isort pv_forecasting/ tests/ *.py
 
-# Lint with flake8
-flake8 pv_forecasting/ tests/ *.py
-
 # Type check with mypy
 mypy pv_forecasting/ --ignore-missing-imports
 
@@ -421,7 +416,6 @@ pre-commit install
 Now every `git commit` will automatically:
 - Format code with Black
 - Sort imports with isort
-- Run flake8 linting
 - Check types with mypy
 - Validate YAML/JSON files
 - Check for large files and secrets
