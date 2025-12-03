@@ -403,3 +403,88 @@ def add_kc(df: pd.DataFrame, ghi_col: str = "ghi") -> pd.DataFrame:
             kc = np.where(out["cs_ghi"].values > 0, out[ghi_col].values / out["cs_ghi"].values, np.nan)
         out["kc"] = np.clip(kc, 0.0, 2.0)
     return out
+
+
+def encode_weather_description(df: pd.DataFrame, col: str = "weather_description") -> pd.DataFrame:
+    """Encode weather description text to numerical ordinal values based on PV production impact.
+
+    Converts categorical weather descriptions to numerical values ranked by expected
+    impact on PV power generation. Higher values = better conditions for PV production.
+
+    Encoding scheme (based on typical PV production):
+        10.0 = clear sky / sunny → Maximum production
+        8.0  = few clouds / partly cloudy → High production (80-90%)
+        6.0  = scattered clouds / mostly cloudy → Medium production (60-70%)
+        4.0  = broken clouds / overcast → Low production (40-50%)
+        2.0  = rain / drizzle / light rain → Very low production (20-30%)
+        1.0  = heavy rain / thunderstorm / snow → Minimal production (10-20%)
+        0.0  = fog / mist / haze → Very low production (0-10%)
+        5.0  = unknown / other → Default middle value
+
+    Args:
+        df: Input dataframe containing weather description column.
+        col: Name of weather description column. Default: "weather_description".
+
+    Returns:
+        DataFrame with weather_description replaced by numerical encoding.
+        Missing values are filled with 5.0 (neutral/unknown).
+
+    Example:
+        >>> df = pd.DataFrame({'weather_description': ['clear sky', 'rain', 'cloudy']})
+        >>> df_encoded = encode_weather_description(df)
+        >>> df_encoded['weather_description'].tolist()
+        [10.0, 2.0, 4.0]
+
+    Note:
+        - Case-insensitive matching (converts to lowercase)
+        - Uses substring matching (e.g., "light rain shower" → matches "rain")
+        - Priority order: checks most specific conditions first
+        - Missing/unknown values filled with 5.0 (middle value)
+        - This is an ordinal encoding reflecting physical PV production impact
+    """
+    out = df.copy()
+
+    if col not in out.columns:
+        return out
+
+    # Convert to lowercase string for matching
+    weather = out[col].astype(str).str.lower()
+
+    # Initialize with default value (unknown)
+    encoded = pd.Series(5.0, index=out.index)
+
+    # Priority encoding: most specific first
+    # Clear sky conditions → Maximum PV production
+    clear_mask = weather.str.contains('clear|sunny', case=False, na=False)
+    encoded[clear_mask] = 10.0
+
+    # Few clouds → High PV production
+    few_clouds_mask = weather.str.contains('few cloud|partly', case=False, na=False)
+    encoded[few_clouds_mask] = 8.0
+
+    # Scattered clouds → Medium-high PV production
+    scattered_mask = weather.str.contains('scatter|mostly cloud', case=False, na=False)
+    encoded[scattered_mask] = 6.0
+
+    # Overcast / broken clouds → Medium-low PV production
+    overcast_mask = weather.str.contains('overcast|broken|cloud', case=False, na=False) & ~(clear_mask | few_clouds_mask | scattered_mask)
+    encoded[overcast_mask] = 4.0
+
+    # Heavy rain / storm → Minimal PV production
+    heavy_rain_mask = weather.str.contains('heavy|thunderstorm|storm|snow', case=False, na=False)
+    encoded[heavy_rain_mask] = 1.0
+
+    # Light rain / drizzle → Very low PV production
+    rain_mask = weather.str.contains('rain|drizzle', case=False, na=False) & ~heavy_rain_mask
+    encoded[rain_mask] = 2.0
+
+    # Fog / mist → Very low PV production (blocks sun)
+    fog_mask = weather.str.contains('fog|mist|haze', case=False, na=False)
+    encoded[fog_mask] = 0.0
+
+    # Handle NaN / missing values
+    nan_mask = out[col].isna()
+    encoded[nan_mask] = 5.0  # Neutral/unknown
+
+    out[col] = encoded
+    return out

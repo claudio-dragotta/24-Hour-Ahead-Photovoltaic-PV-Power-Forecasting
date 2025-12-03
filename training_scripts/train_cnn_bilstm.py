@@ -26,6 +26,8 @@ def set_seed(seed: int = 42):
 
 def parse_args():
     ap = argparse.ArgumentParser(description="24h-ahead PV Forecasting")
+    ap.add_argument("--processed-path", type=str, default="outputs/processed.parquet",
+                    help="path to pre-processed parquet file (preferred)")
     ap.add_argument("--pv-path", type=str, default="data/raw/pv_dataset.xlsx")
     ap.add_argument("--wx-path", type=str, default="data/raw/wx_dataset.xlsx")
     ap.add_argument("--local-tz", type=str, default="Australia/Sydney")
@@ -44,17 +46,25 @@ def main():
     out_dir = Path(args.outdir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Feature engineering (standardized naming, physics features, lag/rolling)
-    df = load_and_engineer_features(
-        Path(args.pv_path),
-        Path(args.wx_path),
-        args.local_tz,
-        lag_hours=[1, 24, 168],
-        rolling_hours=[3, 6],
-    )
-
-    # Save processed
-    persist_processed(df, out_dir)
+    # Load data: prefer processed parquet for speed
+    processed_path = Path(args.processed_path)
+    if processed_path.exists():
+        print(f"Loading pre-processed data from {processed_path}...")
+        df = pd.read_parquet(processed_path)
+        print(f"Loaded {len(df)} samples with {len(df.columns)} features from cache")
+    else:
+        print(f"Processed parquet not found, loading and engineering features from raw data...")
+        # Feature engineering (standardized naming, physics features, lag/rolling)
+        df = load_and_engineer_features(
+            Path(args.pv_path),
+            Path(args.wx_path),
+            args.local_tz,
+            lag_hours=[1, 24, 168],
+            rolling_hours=[3, 6],
+        )
+        # Save processed
+        persist_processed(df, out_dir)
+        print(f"Saved processed data to outputs/processed.parquet")
 
     # Scale features (fit on train only)
     feature_cols = [c for c in df.columns if c not in {"pv", "time_idx", "series_id"}]
@@ -93,9 +103,33 @@ def main():
     # Build and train model
     model = build_cnn_bilstm(input_shape=(args.seq_len, n_features), horizon=args.horizon)
     callbacks = [
-        tf.keras.callbacks.EarlyStopping(patience=8, restore_best_weights=True, monitor="val_loss"),
-        tf.keras.callbacks.ModelCheckpoint(filepath=str(out_dir / "model_best.keras"), save_best_only=True, monitor="val_loss"),
+        tf.keras.callbacks.EarlyStopping(
+            patience=15,
+            restore_best_weights=True,
+            monitor="val_loss",
+            verbose=1
+        ),
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.5,
+            patience=5,
+            min_lr=1e-6,
+            verbose=1
+        ),
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=str(out_dir / "model_best.keras"),
+            save_best_only=True,
+            monitor="val_loss"
+        ),
     ]
+
+    print(f"Training CNN-BiLSTM model...")
+    print(f"Model parameters: {model.count_params():,}")
+    print(f"Input shape: {args.seq_len} timesteps × {n_features} features")
+    print(f"Output: {args.horizon} horizons")
+    print(f"Epochs: {args.epochs} (with early stopping patience={15})")
+    print(f"Batch size: {args.batch_size}")
+    print()
     history = model.fit(
         Xtr, Ytr,
         validation_data=(Xval, Yval),
