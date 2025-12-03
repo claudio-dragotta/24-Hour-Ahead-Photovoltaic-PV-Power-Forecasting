@@ -518,7 +518,7 @@ python predict.py \
 Run training with default parameters:
 
 ```bash
-python training_scripts/train_cnn_bilstm.py
+python training_scripts/train_cnn_bilstm.py --outdir outputs_cnn
 ```
 
 With custom parameters:
@@ -530,8 +530,9 @@ python training_scripts/train_cnn_bilstm.py \
   --local-tz Australia/Sydney \
   --seq-len 168 \
   --horizon 24 \
-  --epochs 50 \
-  --batch-size 64
+  --epochs 100 \
+  --batch-size 64 \
+  --outdir outputs_cnn
 ```
 
 ### LightGBM Baseline (24 regressori)
@@ -579,13 +580,14 @@ This script:
 After training, the following files are generated in the `outputs/` directory:
 
 - `processed.parquet`: Merged, feature-engineered time series (UTC-indexed)
-- `scalers.joblib`: Fitted feature scaler (StandardScaler)
-- `model_best.keras`: Best model weights (lowest validation loss)
-- `history.json`: Training and validation loss history
-- `predictions_test.csv`: Long-format predictions for the test split
-- `outputs_lgbm/`: LightGBM per-horizon models (`models/lgbm_h*.joblib`), validation predictions/metrics
-- `outputs_tft/`: TFT checkpoint (`tft-best.ckpt`), validation predictions/metrics
-- `outputs_ensemble/`: Validation blending weights and blended predictions
+- `outputs_lgbm/`: LightGBM per-horizon models (`models/lgbm_h*.joblib`), test predictions/metrics
+- `outputs_tft/`: TFT checkpoint (`tft-best.ckpt`), test predictions/metrics
+- `outputs_cnn/`: CNN-BiLSTM model (`model_best.keras`), scaler, test predictions
+  - `scalers.joblib`: Fitted feature scaler (StandardScaler)
+  - `model_best.keras`: Best model weights (lowest validation loss)
+  - `history.json`: Training and validation loss history
+  - `predictions_test_cnn.csv`: Long-format predictions for the test split
+- `outputs_ensemble/`: Ensemble blending weights and blended predictions
 
 ### Predictions CSV Format
 

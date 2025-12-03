@@ -33,9 +33,9 @@ def parse_args():
     ap.add_argument("--local-tz", type=str, default="Australia/Sydney")
     ap.add_argument("--seq-len", type=int, default=168)
     ap.add_argument("--horizon", type=int, default=24)
-    ap.add_argument("--epochs", type=int, default=50)
+    ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--batch-size", type=int, default=64)
-    ap.add_argument("--outdir", type=str, default="outputs")
+    ap.add_argument("--outdir", type=str, default="outputs_cnn")
     return ap.parse_args()
 
 
@@ -184,7 +184,7 @@ def main():
                 "y_pred": float(Yhat[i, h]),
             })
     pred_df = pd.DataFrame(rows)
-    pred_df.to_csv(out_dir / "predictions_test.csv", index=False)
+    pred_df.to_csv(out_dir / "predictions_test_cnn.csv", index=False)
 
 
 if __name__ == "__main__":
