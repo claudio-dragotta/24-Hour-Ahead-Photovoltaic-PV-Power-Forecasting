@@ -132,10 +132,12 @@ This project follows professional software engineering best practices:
 │   ├── analyze_errors.py          # Error analysis utilities
 │   └── ensemble.py                # Ensemble model combination
 │
-├── train.py                       # CNN-BiLSTM training script
-├── lgbm_train.py                  # LightGBM multi-horizon training
-├── tft_train.py                   # TFT training script
-├── predict.py                     # Inference script
+├── training_scripts/              # All model training scripts
+│   ├── train_cnn_bilstm.py        # CNN-BiLSTM training
+│   ├── train_lgbm.py              # LightGBM multi-horizon training
+│   ├── train_tft.py               # TFT training
+│   ├── predict.py                 # Inference script
+│   └── README.md                  # Training scripts guide
 │
 ├── outputs/                       # Model outputs (generated)
 ├── outputs_lgbm/                  # LightGBM outputs (generated)
@@ -394,13 +396,13 @@ PY
 
 2) **LightGBM multi‑orizzonte (24 modelli)**
 ```bash
-python lgbm_train.py --outdir outputs_lgbm --walk-forward-folds 3  # opzionale WF
+python training_scripts/train_lgbm.py --outdir outputs_lgbm --walk-forward-folds 3  # opzionale WF
 ```
    - Salva modelli per h=1..24 in `outputs_lgbm/models/`, predizioni/metriche validation e (se richiesto) walk‑forward.
 
 3) **TFT (PyTorch Forecasting)**
 ```bash
-python tft_train.py --outdir outputs_tft --use-future-meteo   # se hai meteo future
+python training_scripts/train_tft.py --outdir outputs_tft --use-future-meteo   # se hai meteo future
 ```
    - Crea dataset encoder 168h / decoder 24h, quantile loss (0.1/0.5/0.9), early stopping, checkpoint `tft-best.ckpt`, predizioni/metriche validation per orizzonte.
 
@@ -434,13 +436,13 @@ python predict.py \
 Run training with default parameters:
 
 ```bash
-python train.py
+python training_scripts/train_cnn_bilstm.py
 ```
 
 With custom parameters:
 
 ```bash
-python train.py \
+python training_scripts/train_cnn_bilstm.py \
   --pv-path data/raw/pv_dataset.xlsx \
   --wx-path data/raw/wx_dataset.xlsx \
   --local-tz Australia/Sydney \
@@ -453,13 +455,13 @@ python train.py \
 ### LightGBM Baseline (24 regressori)
 
 ```bash
-python lgbm_train.py --outdir outputs_lgbm
+python training_scripts/train_lgbm.py --outdir outputs_lgbm
 ```
 
 ### Temporal Fusion Transformer (PyTorch Forecasting)
 
 ```bash
-python tft_train.py --outdir outputs_tft --use-future-meteo   # se hai NWP/meteo future
+python training_scripts/train_tft.py --outdir outputs_tft --use-future-meteo   # se hai NWP/meteo future
 ```
 
 ### Ensemble e Inference
@@ -585,9 +587,9 @@ python -c "import torch; print(torch.cuda.is_available())"
 
 ### New Training Modes
 
-- Baseline (current): `python train.py` trains CNN‑BiLSTM.
-- LightGBM (new): `python train.py --model lightgbm` trains 24 horizons with engineered features.
-- TFT (new): `python tft_train.py` (or `python train.py --model tft`) trains a Temporal Fusion Transformer with quantile loss.
+- Baseline (current): `python training_scripts/train_cnn_bilstm.py` trains CNN‑BiLSTM.
+- LightGBM (new): `python training_scripts/train_cnn_bilstm.py --model lightgbm` trains 24 horizons with engineered features.
+- TFT (new): `python training_scripts/train_tft.py` (or `python training_scripts/train_cnn_bilstm.py --model tft`) trains a Temporal Fusion Transformer with quantile loss.
 - Ensemble (new): `python scripts/ensemble.py` finds validation weights and merges predictions.
 
 Notes:
