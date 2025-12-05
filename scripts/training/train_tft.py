@@ -28,6 +28,29 @@ from pv_forecasting.pipeline import load_and_engineer_features, persist_processe
 logger = get_logger(__name__)
 
 
+def compute_solar_weights(zenith_deg: pd.Series, min_weight: float = 0.1) -> np.ndarray:
+    """Compute sample weights based on solar zenith angle.
+
+    Higher weights during daytime (low zenith) and lower weights at night (high zenith).
+    Uses cosine of zenith angle as it represents solar irradiance intensity.
+
+    Args:
+        zenith_deg: Solar zenith angle in degrees (0° = sun overhead, 90° = horizon)
+        min_weight: Minimum weight to assign (prevents zero weights at night)
+
+    Returns:
+        Array of sample weights normalized to mean=1.0
+    """
+    zenith_rad = np.deg2rad(zenith_deg.values)
+    # cos(zenith) ranges from 1 (sun overhead) to 0 (horizon) to negative (night)
+    cos_zenith = np.cos(zenith_rad)
+    # Clip to [0, 1] and add minimum weight
+    weights = np.maximum(cos_zenith, 0.0) + min_weight
+    # Normalize to mean=1.0 to preserve overall scale
+    weights = weights / weights.mean()
+    return weights
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for TFT training.
 
@@ -91,6 +114,19 @@ def main() -> None:
 
     target = "pv"
     logger.info(f"target variable: {target}")
+
+    # Compute solar-based sample weights
+    if "sp_zenith" in df.columns:
+        df["sample_weight"] = compute_solar_weights(df["sp_zenith"])
+        logger.info(
+            f"computed solar-based sample weights: "
+            f"min={df['sample_weight'].min():.3f}, "
+            f"max={df['sample_weight'].max():.3f}, "
+            f"mean={df['sample_weight'].mean():.3f}"
+        )
+    else:
+        df["sample_weight"] = 1.0
+        logger.info("sp_zenith not found, using uniform weights")
 
     # Known future covariates: time features, solar position, clear-sky estimates
     known_future = [
@@ -159,8 +195,10 @@ def main() -> None:
         time_varying_known_reals=sorted(set(known_future)),
         time_varying_unknown_reals=[target] + sorted(set(past_unknown)),
         target_normalizer=GroupNormalizer(groups=["series_id"]),
+        weight="sample_weight",  # Apply solar-based sample weights
         allow_missing_timesteps=True,
     )
+    logger.info("training dataset created with solar-weighted samples")
 
     # Validation dataset (for early stopping)
     logger.info("creating validation dataset...")

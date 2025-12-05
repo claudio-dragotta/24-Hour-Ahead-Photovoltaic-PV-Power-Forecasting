@@ -71,6 +71,29 @@ def chronological_masks(
     return train_mask, val_mask, test_mask
 
 
+def compute_solar_weights(zenith_deg: pd.Series, min_weight: float = 0.1) -> np.ndarray:
+    """Compute sample weights based on solar zenith angle.
+
+    Higher weights during daytime (low zenith) and lower weights at night (high zenith).
+    Uses cosine of zenith angle as it represents solar irradiance intensity.
+
+    Args:
+        zenith_deg: Solar zenith angle in degrees (0° = sun overhead, 90° = horizon)
+        min_weight: Minimum weight to assign (prevents zero weights at night)
+
+    Returns:
+        Array of sample weights normalized to mean=1.0
+    """
+    zenith_rad = np.deg2rad(zenith_deg.values)
+    # cos(zenith) ranges from 1 (sun overhead) to 0 (horizon) to negative (night)
+    cos_zenith = np.cos(zenith_rad)
+    # Clip to [0, 1] and add minimum weight
+    weights = np.maximum(cos_zenith, 0.0) + min_weight
+    # Normalize to mean=1.0 to preserve overall scale
+    weights = weights / weights.mean()
+    return weights
+
+
 def train_lightgbm_multi_horizon(
     data: pd.DataFrame,
     feature_cols: List[str],
@@ -100,9 +123,18 @@ def train_lightgbm_multi_horizon(
 
     train_series = data.loc[train_mask, "pv"].values
 
-    print(f"\n{'='*60}")
-    print(f"Training LightGBM multi-horizon models")
-    print(f"{'='*60}")
+    # Compute solar-based sample weights for training set
+    if "sp_zenith" in data.columns:
+        train_weights = compute_solar_weights(data.loc[train_mask, "sp_zenith"])
+        print(f"\n{'='*60}")
+        print(f"Training LightGBM with solar-weighted samples")
+        print(f"Weight stats: min={train_weights.min():.3f}, max={train_weights.max():.3f}, mean={train_weights.mean():.3f}")
+        print(f"{'='*60}")
+    else:
+        train_weights = None
+        print(f"\n{'='*60}")
+        print(f"Training LightGBM multi-horizon models (no solar weights)")
+        print(f"{'='*60}")
 
     for h in tqdm(range(1, horizon + 1), desc="Training horizons", unit="model"):
         y_train = targets[h].loc[train_mask]
@@ -124,6 +156,7 @@ def train_lightgbm_multi_horizon(
         model.fit(
             X_train,
             y_train,
+            sample_weight=train_weights,  # Apply solar-based sample weights
             eval_set=[(X_val, y_val)],
             eval_metric="l2",
             callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)],
@@ -206,6 +239,12 @@ def run_walk_forward(
         X_val = data.loc[val_mask, feature_cols]
         train_series = data.loc[train_mask, "pv"].values
 
+        # Compute solar-based sample weights for this fold's training set
+        if "sp_zenith" in data.columns:
+            fold_weights = compute_solar_weights(data.loc[train_mask, "sp_zenith"])
+        else:
+            fold_weights = None
+
         for h in tqdm(range(1, horizon + 1), desc=f"  Fold {fold+1}/{folds}", unit="h", leave=False):
             y_train = targets[h].loc[train_mask]
             y_val = targets[h].loc[val_mask]
@@ -223,6 +262,7 @@ def run_walk_forward(
             model.fit(
                 X_train,
                 y_train,
+                sample_weight=fold_weights,  # Apply solar-based sample weights
                 eval_set=[(X_val, y_val)],
                 eval_metric="l2",
                 callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)],
