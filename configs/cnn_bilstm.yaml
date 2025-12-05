@@ -23,6 +23,8 @@ model:
   val_ratio: 0.1
   seed: 42
   early_stopping_patience: 15  # More patience for CNN-BiLSTM
+  use_future_meteo: true       # Use future weather as features (simulated NWP)
+  future_cols: ["ghi", "dni", "dhi", "temp", "humidity", "clouds_all", "wind_speed"]
 
 output:
   output_dir: "outputs/cnn_bilstm"

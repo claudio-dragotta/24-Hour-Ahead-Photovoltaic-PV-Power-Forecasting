@@ -1,6 +1,6 @@
-"""Ensemble Model Wrapper: treats 6 models as a single unified model.
+"""Ensemble Model Wrapper: treats multiple models as a single unified model.
 
-This module provides a high-level interface to load all 6 trained models
+This module provides a high-level interface to load trained models
 and apply ensemble weights automatically, making inference simple.
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import joblib
 import numpy as np
@@ -17,13 +17,13 @@ import tensorflow as tf
 
 
 class EnsembleModel:
-    """Unified ensemble model that combines 6 models automatically.
+    """Unified ensemble model that combines models automatically.
 
     This class loads all component models and ensemble weights, providing
     a simple .predict() interface that handles everything internally.
 
     Example:
-        >>> ensemble = EnsembleModel.from_outputs("outputs_ensemble")
+        >>> ensemble = EnsembleModel.from_outputs("outputs_ensemble", "outputs_baseline")
         >>> predictions = ensemble.predict(input_data)
     """
 
@@ -51,25 +51,22 @@ class EnsembleModel:
     def from_outputs(
         cls,
         ensemble_dir: str | Path,
-        baseline_dir: str | Path = "outputs_baseline",
-        lag72_dir: str | Path = "outputs_lag72",
+        outputs_dir: str | Path = "outputs_baseline",
     ) -> "EnsembleModel":
         """Load ensemble model from output directories.
 
         Args:
             ensemble_dir: Path to ensemble outputs (contains ensemble_weights.json).
-            baseline_dir: Path to baseline model outputs.
-            lag72_dir: Path to lag72 model outputs.
+            outputs_dir: Path to model outputs (lgbm/, cnn/, tft/ subdirs).
 
         Returns:
             Initialized EnsembleModel instance.
 
         Example:
-            >>> ensemble = EnsembleModel.from_outputs("outputs_ensemble")
+            >>> ensemble = EnsembleModel.from_outputs("outputs_ensemble", "outputs_baseline")
         """
         ensemble_dir = Path(ensemble_dir)
-        baseline_dir = Path(baseline_dir)
-        lag72_dir = Path(lag72_dir)
+        outputs_dir = Path(outputs_dir)
 
         # Load ensemble weights
         weights_path = ensemble_dir / "ensemble_weights.json"
@@ -89,33 +86,46 @@ class EnsembleModel:
         scalers = {}
 
         for model_name in model_names:
-            # Determine model type and configuration
-            is_baseline = "Baseline" in model_name
-            config_dir = baseline_dir if is_baseline else lag72_dir
-
+            # Determine model type (supports both simple and old naming)
             if "LightGBM" in model_name:
                 # Load all 24 LightGBM models
                 lgbm_models = []
+                lgbm_dir = outputs_dir / "lgbm" / "models"
                 for h in range(1, 25):
-                    model_path = config_dir / "lgbm" / "models" / f"lgbm_h{h}.joblib"
-                    lgbm_models.append(joblib.load(model_path))
+                    model_path = lgbm_dir / f"lgbm_h{h}.joblib"
+                    if model_path.exists():
+                        lgbm_models.append(joblib.load(model_path))
+                    else:
+                        raise FileNotFoundError(f"LightGBM model not found: {model_path}")
                 models[model_name] = lgbm_models
                 print(f"  ✓ {model_name}: 24 LightGBM models")
 
-            elif "CNN-BiLSTM" in model_name:
+            elif "CNN-BiLSTM" in model_name or "CNN" in model_name:
                 # Load CNN-BiLSTM model and scaler
-                model_path = config_dir / "cnn" / "model_best.keras"
-                scaler_path = config_dir / "cnn" / "scalers.joblib"
+                model_path = outputs_dir / "cnn" / "model_best.keras"
+                scaler_path = outputs_dir / "cnn" / "scalers.joblib"
 
-                models[model_name] = tf.keras.models.load_model(model_path)
-                scalers[model_name] = joblib.load(scaler_path)
-                print(f"  ✓ {model_name}: CNN-BiLSTM + scaler")
+                if model_path.exists():
+                    models[model_name] = tf.keras.models.load_model(model_path)
+                    if scaler_path.exists():
+                        scalers[model_name] = joblib.load(scaler_path)
+                    print(f"  ✓ {model_name}: CNN-BiLSTM + scaler")
+                else:
+                    raise FileNotFoundError(f"CNN model not found: {model_path}")
 
             elif "TFT" in model_name:
                 # Load TFT model (PyTorch Lightning checkpoint)
-                model_path = config_dir / "tft" / "tft-best.ckpt"
-                # TODO: Implement TFT loading when TFT training is done
-                print(f"  ⚠ {model_name}: TFT loading not implemented yet")
+                tft_dir = outputs_dir / "tft"
+                ckpt_files = list(tft_dir.glob("*.ckpt"))
+                if ckpt_files:
+                    # TFT requires special loading - store path for now
+                    models[model_name] = {"checkpoint_path": ckpt_files[0]}
+                    print(f"  ✓ {model_name}: TFT checkpoint found at {ckpt_files[0]}")
+                else:
+                    print(f"  ⚠ {model_name}: TFT checkpoint not found in {tft_dir}")
+                    models[model_name] = None
+            else:
+                print(f"  ⚠ Unknown model type: {model_name}")
                 models[model_name] = None
 
         return cls(models, model_weights, scalers)

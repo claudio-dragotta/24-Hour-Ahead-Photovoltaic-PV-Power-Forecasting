@@ -271,7 +271,47 @@ def main() -> None:
     else:
         logger.warning("no best checkpoint found, using final model")
 
-    # Generate predictions on TEST set (never seen during training!)
+    # Build timestamp lookup and naive baseline
+    time_lookup: Dict[int, pd.Timestamp] = {int(ti): ts for ti, ts in zip(df["time_idx"].astype(int), df.index)}
+    naive_map = {h: df["pv"].shift(24 - h).reset_index(drop=True) for h in range(1, args.horizon + 1)}
+    train_series = df.loc[df["time_idx"] <= cutoff_train, "pv"].values
+
+    # Generate predictions on VALIDATION set (for ensemble weight optimization - no data leakage)
+    logger.info("generating predictions on VALIDATION set (for ensemble)...")
+    val_preds, val_x = tft.predict(val_loader, return_x=True, mode="prediction")
+    val_preds_np = val_preds.detach().cpu().numpy()
+    val_decoder_time_idx = val_x["decoder_time_idx"].detach().cpu().numpy()
+    val_encoder_time_idx = val_x["encoder_time_idx"].detach().cpu().numpy()
+    val_decoder_target = val_x["decoder_target"].detach().cpu().numpy()
+
+    val_rows = []
+    for i in range(val_preds_np.shape[0]):
+        for h_idx in range(val_preds_np.shape[1]):
+            horizon_h = h_idx + 1
+            origin_ti = int(val_encoder_time_idx[i, -1])
+            forecast_ti = int(val_decoder_time_idx[i, h_idx])
+            origin_ts = time_lookup.get(origin_ti)
+            forecast_ts = time_lookup.get(forecast_ti)
+            y_true = float(val_decoder_target[i, h_idx])
+            y_pred = float(val_preds_np[i, h_idx])
+
+            val_rows.append(
+                {
+                    "time_idx": forecast_ti,
+                    "origin_timestamp_utc": origin_ts.isoformat() if origin_ts is not None else None,
+                    "forecast_timestamp_utc": forecast_ts.isoformat() if forecast_ts is not None else None,
+                    "horizon_h": horizon_h,
+                    "y_true": y_true,
+                    "y_pred": y_pred,
+                }
+            )
+
+    val_pred_df = pd.DataFrame(val_rows)
+    val_pred_path = out_dir / "predictions_val_tft.csv"
+    val_pred_df.to_csv(val_pred_path, index=False)
+    logger.info(f"saved {len(val_pred_df)} validation predictions to {val_pred_path}")
+
+    # Generate predictions on TEST set (never seen during training or ensemble tuning!)
     logger.info("generating predictions on TEST set...")
     preds, x = tft.predict(test_loader, return_x=True, mode="prediction")
     preds_np = preds.detach().cpu().numpy()  # shape (N, horizon)

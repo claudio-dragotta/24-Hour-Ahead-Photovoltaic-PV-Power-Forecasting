@@ -34,8 +34,8 @@ lightgbm:
   colsample_bytree: 0.8
   reg_alpha: 0.1
   reg_lambda: 0.1
-  use_future_meteo: false   # Use future weather as features (if available)
-  future_cols: ["ghi", "dni", "dhi", "temp"]
+  use_future_meteo: true    # Use future weather as features (simulated NWP)
+  future_cols: ["ghi", "dni", "dhi", "temp", "humidity", "clouds_all", "wind_speed"]
 
 output:
   output_dir: "outputs"

@@ -103,12 +103,15 @@ def train_lightgbm_multi_horizon(
     val_ratio: float,
     out_dir: Path,
     seed: int,
-) -> Tuple[Dict[int, lgb.LGBMRegressor], pd.DataFrame, List[dict]]:
+) -> Tuple[Dict[int, lgb.LGBMRegressor], pd.DataFrame, pd.DataFrame, List[dict]]:
     """Train one LightGBM regressor per horizon with train/val/test split.
 
     - train: for model training
-    - val: for early stopping
-    - test: for final evaluation (never seen during training)
+    - val: for early stopping AND ensemble weight optimization
+    - test: for final evaluation (never seen during training or ensemble tuning)
+    
+    Returns:
+        Tuple of (models, val_preds_df, test_preds_df, metrics)
     """
     train_mask, val_mask, test_mask = chronological_masks(
         data["time_idx"], train_ratio=train_ratio, val_ratio=val_ratio
@@ -119,7 +122,8 @@ def train_lightgbm_multi_horizon(
 
     models: Dict[int, lgb.LGBMRegressor] = {}
     metrics: List[dict] = []
-    pred_rows: List[dict] = []
+    test_pred_rows: List[dict] = []
+    val_pred_rows: List[dict] = []
 
     train_series = data.loc[train_mask, "pv"].values
 
@@ -163,7 +167,24 @@ def train_lightgbm_multi_horizon(
         )
         models[h] = model
 
-        # Evaluate on TEST set (never seen during training!)
+        # Predictions on VALIDATION set (for ensemble weight optimization)
+        y_pred_val = model.predict(X_val)
+        val_idx = data.index[val_mask]
+        val_time_idx = data.loc[val_mask, "time_idx"].astype(int).values
+        for i in range(len(y_val)):
+            base_ts = val_idx[i]
+            val_pred_rows.append(
+                {
+                    "time_idx": int(val_time_idx[i]),
+                    "origin_timestamp_utc": base_ts.isoformat(),
+                    "forecast_timestamp_utc": (base_ts + pd.Timedelta(hours=h)).isoformat(),
+                    "horizon_h": h,
+                    "y_true": float(y_val.iloc[i]),
+                    "y_pred": float(y_pred_val[i]),
+                }
+            )
+
+        # Evaluate on TEST set (never seen during training or ensemble tuning!)
         y_pred_test = model.predict(X_test)
         naive_test = data["pv"].shift(24 - h).loc[test_mask]
 
@@ -190,7 +211,7 @@ def train_lightgbm_multi_horizon(
         test_time_idx = data.loc[test_mask, "time_idx"].astype(int).values
         for i in range(len(y_test)):
             base_ts = test_idx[i]
-            pred_rows.append(
+            test_pred_rows.append(
                 {
                     "time_idx": int(test_time_idx[i]),
                     "origin_timestamp_utc": base_ts.isoformat(),
@@ -204,8 +225,9 @@ def train_lightgbm_multi_horizon(
 
         dump(model, out_dir / "models" / f"lgbm_h{h}.joblib")
 
-    preds_df = pd.DataFrame(pred_rows)
-    return models, preds_df, metrics
+    val_preds_df = pd.DataFrame(val_pred_rows)
+    test_preds_df = pd.DataFrame(test_pred_rows)
+    return models, val_preds_df, test_preds_df, metrics
 
 
 def run_walk_forward(
@@ -359,7 +381,7 @@ def main():
     print(f"✓ Created {len(data)} training samples with {len(feature_cols)} features\n")
 
     # Train + validate + test with 3-way chronological split
-    models, preds_df, metrics = train_lightgbm_multi_horizon(
+    models, val_preds_df, test_preds_df, metrics = train_lightgbm_multi_horizon(
         data=data,
         feature_cols=feature_cols,
         targets=targets,
@@ -370,7 +392,10 @@ def main():
         seed=args.seed,
     )
 
-    preds_df.to_csv(out_dir / "predictions_test_lgbm.csv", index=False)
+    # Save VALIDATION predictions (for ensemble weight optimization - no data leakage)
+    val_preds_df.to_csv(out_dir / "predictions_val_lgbm.csv", index=False)
+    # Save TEST predictions (for final evaluation only)
+    test_preds_df.to_csv(out_dir / "predictions_test_lgbm.csv", index=False)
     (out_dir / "metrics_test_lgbm.json").write_text(json.dumps(metrics, indent=2))
 
     metric_summary = {

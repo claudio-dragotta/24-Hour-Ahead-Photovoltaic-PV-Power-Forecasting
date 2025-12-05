@@ -541,6 +541,7 @@ ensemble = EnsembleModel.from_outputs('outputs_ensemble')
 6. **EnsembleModel for production** → Simple unified interface
 
 **For detailed documentation, see:**
+- [TECHNICAL_REFERENCE.md](TECHNICAL_REFERENCE.md) - **Complete data & model specification** (input/output formats, commands)
 - [WORKFLOW.md](WORKFLOW.md) - Complete step-by-step guide
 - [EXPERIMENTS.md](EXPERIMENTS.md) - Experimental design & tracking
 - [METRICS_ANALYSIS.md](METRICS_ANALYSIS.md) - Performance benchmarks
@@ -1269,3 +1270,456 @@ Notes:
 **Date**: November 2025
 **Institution**: Deep Learning Course - Magistrale  
 **Repository**: [24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting](https://github.com/claudio-dragotta/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting)
+
+---
+
+## Technical Reference: Complete Data & Model Specification
+
+This section provides exhaustive technical details about data formats, model I/O, and step-by-step commands.
+
+### 1. Data Format Specification
+
+#### Raw Data (Input Excel Files)
+
+**`data/raw/pv_dataset.xlsx`** - PV Production Data
+```
+Sheets: ['07-10--06-11', '07-11--06-12']
+Columns:
+  - timestamp: datetime (naive, Australia/Sydney local time)
+  - pv: float [0.0, 1.0] - Normalized power (actual_kW / 82.41 kWp)
+
+Example row:
+  timestamp: 2010-07-01 06:00:00.000
+  pv: 0.0023
+```
+
+**`data/raw/wx_dataset.xlsx`** - Weather Data
+```
+Sheets: ['07-10--06-11', '07-11--06-12']
+Columns (14 total):
+  - dt_iso: datetime string with timezone (e.g., "2010-07-01 10:00:00 +10:00")
+  - lat, lon: float (site location: -33.86, 151.21 Sydney)
+  - temp: float [K] (temperature in Kelvin, ~280-310K)
+  - dew_point: float [K]
+  - pressure: float [hPa] (~1000-1030)
+  - humidity: float [%] (0-100)
+  - wind_speed: float [m/s]
+  - wind_deg: float [degrees] (0-360)
+  - rain_1h: float [mm] (precipitation)
+  - clouds_all: float [%] (cloud cover 0-100)
+  - Ghi: float [W/m²] (Global Horizontal Irradiance, 0-1200)
+  - Dni: float [W/m²] (Direct Normal Irradiance, 0-1000)
+  - Dhi: float [W/m²] (Diffuse Horizontal Irradiance, 0-400)
+```
+
+#### Processed Data (Parquet Format)
+
+**`outputs_baseline/processed.parquet`** - 45 Features
+```
+Shape: (17,374 rows x 45 columns)
+Size: ~1.9 MB
+
+Index: DatetimeIndex (UTC timezone)
+  - Range: 2010-07-08 00:00:00 to 2012-06-29 23:00:00
+  - Frequency: Hourly (17,374 hours = ~2 years)
+
+Columns by category:
+
+TARGET (1):
+  pv                float64   [0, 1]        Normalized PV output
+
+METEOROLOGICAL (8):
+  temp              float64   [K]           Temperature
+  humidity          float64   [%]           Relative humidity
+  wind_speed        float64   [m/s]         Wind speed
+  clouds_all        float64   [%]           Cloud cover
+  rain_1h           float64   [mm]          Hourly precipitation
+  pressure          float64   [hPa]         Atmospheric pressure
+  dew_point         float64   [K]           Dew point
+  weather_desc      float64   [0-10]        Encoded weather condition
+
+SOLAR IRRADIANCE (3):
+  ghi               float64   [W/m²]        Global Horizontal Irradiance
+  dni               float64   [W/m²]        Direct Normal Irradiance
+  dhi               float64   [W/m²]        Diffuse Horizontal Irradiance
+
+PHYSICS-BASED (7):
+  sp_zenith         float64   [degrees]     Solar zenith angle
+  sp_azimuth        float64   [degrees]     Solar azimuth angle
+  cs_ghi            float64   [W/m²]        Clear-sky GHI (pvlib)
+  cs_dni            float64   [W/m²]        Clear-sky DNI
+  cs_dhi            float64   [W/m²]        Clear-sky DHI
+  kc                float64   [0, 1+]       Clearness index (GHI/cs_GHI)
+  is_night          int64     [0, 1]        Night flag (zenith > 90)
+
+TIME FEATURES (4):
+  hour_sin          float64   [-1, 1]       sin(2*pi*hour/24)
+  hour_cos          float64   [-1, 1]       cos(2*pi*hour/24)
+  doy_sin           float64   [-1, 1]       sin(2*pi*day_of_year/365)
+  doy_cos           float64   [-1, 1]       cos(2*pi*day_of_year/365)
+
+LAG FEATURES (12):
+  pv_lag1           float64                 PV at t-1h
+  pv_lag24          float64                 PV at t-24h (yesterday same hour)
+  pv_lag168         float64                 PV at t-168h (last week same hour)
+  ghi_lag1, ghi_lag24, ghi_lag168          GHI lags
+  dni_lag1, dni_lag24, dni_lag168          DNI lags
+  dhi_lag1, dhi_lag24, dhi_lag168          DHI lags
+
+ROLLING STATISTICS (6):
+  pv_roll3h         float64                 3-hour rolling mean of PV
+  pv_roll6h         float64                 6-hour rolling mean of PV
+  ghi_roll3h, ghi_roll6h                   GHI rolling means
+  dni_roll3h, dni_roll6h                   DNI rolling means
+
+METADATA (4):
+  time_idx          int64     [0, N-1]      Sequential index for TFT
+  series_id         str       "pv_site_1"   Series identifier
+  lat               float64   -33.86        Latitude
+  lon               float64   151.21        Longitude
+```
+
+**`outputs_lag72/processed.parquet`** - 49 Features (+4 lag72)
+```
+Same as above PLUS:
+
+ADDITIONAL LAG72 FEATURES (4):
+  pv_lag72          float64                 PV at t-72h (3 days ago)
+  ghi_lag72         float64                 GHI at t-72h
+  dni_lag72         float64                 DNI at t-72h
+  dhi_lag72         float64                 DHI at t-72h
+
+Shape: (17,374 rows x 49 columns)
+```
+
+---
+
+### 2. Data Split Strategy
+
+```
++------------------------------------------------------------------+
+|                    CHRONOLOGICAL SPLIT                            |
+|              (NO SHUFFLE - Time Series Integrity)                 |
++------------------------------------------------------------------+
+
+Total samples: 17,374 hours
+
+TRAIN SET (60%):
+  - Samples: 0 to 10,424 (10,425 samples)
+  - Period: 2010-07-08 to 2011-09-03
+  - Purpose: Model parameter learning
+
+VALIDATION SET (20%):
+  - Samples: 10,425 to 13,899 (3,475 samples)
+  - Period: 2011-09-03 to 2012-01-27
+  - Purpose: Ensemble weight optimization (NO data leakage!)
+
+TEST SET (20%):
+  - Samples: 13,900 to 17,373 (3,474 samples)
+  - Period: 2012-01-27 to 2012-06-29
+  - Purpose: Final honest evaluation (NEVER seen during training/tuning)
+```
+
+---
+
+### 3. Model Specifications
+
+#### LightGBM Multi-Horizon
+
+**Architecture:**
+- 24 independent LightGBM regressors (one per forecast horizon h=1..24)
+- Each model: gradient boosting with 500 trees, max_depth=8, learning_rate=0.05
+
+**Input:** Feature vector X at time t
+```python
+X.shape = (n_samples, n_features)  # n_features = 45 or 49
+
+# Features used (all columns except target and metadata):
+FEATURE_COLS = [
+    'temp', 'humidity', 'wind_speed', 'clouds_all', 'rain_1h',
+    'pressure', 'dew_point', 'ghi', 'dni', 'dhi',
+    'sp_zenith', 'sp_azimuth', 'cs_ghi', 'cs_dni', 'cs_dhi', 'kc',
+    'hour_sin', 'hour_cos', 'doy_sin', 'doy_cos',
+    'pv_lag1', 'pv_lag24', 'pv_lag168',
+    'ghi_lag1', 'ghi_lag24', 'ghi_lag168', ...
+]
+```
+
+**Output:** 24 predictions (one per horizon)
+```python
+predictions.shape = (n_samples, 24)
+# predictions[i, h-1] = predicted PV at time t+h for sample i
+```
+
+**Files produced:**
+```
+outputs_baseline/lgbm/
+├── models/
+│   ├── lgbm_h1.joblib      # Model for h=1 (1 hour ahead)
+│   ├── lgbm_h2.joblib      # Model for h=2
+│   └── lgbm_h24.joblib     # Model for h=24 (24 hours ahead)
+├── predictions_val_lgbm.csv   # Validation predictions (for ensemble)
+├── predictions_test_lgbm.csv  # Test predictions (for evaluation)
+└── metrics_test_lgbm.json     # Per-horizon metrics
+```
+
+---
+
+#### CNN-BiLSTM Sequence-to-Sequence
+
+**Architecture:**
+```
+Input (168, n_features)     # 168 hours = 7 days lookback
+       |
+Conv1D(64 filters, kernel=3, ReLU)
+       |
+MaxPool1D(2) -> (84, 64)
+       |
+Conv1D(128 filters, kernel=3, ReLU)
+       |
+MaxPool1D(2) -> (42, 128)
+       |
+Bidirectional(LSTM(128, return_sequences=False)) -> (256,)
+       |
+Dense(128, ReLU)
+       |
+Dropout(0.3)
+       |
+Dense(24)                   # 24 hours forecast
+       |
+Output (24,)
+```
+
+**Input:** Sliding window of 168 hours
+```python
+X.shape = (n_windows, 168, n_features)
+# Window at position i contains:
+# - Features from time t-167 to t (168 consecutive hours)
+# - Target: PV values from t+1 to t+24 (next 24 hours)
+```
+
+**Output:** 24-hour forecast vector
+```python
+predictions.shape = (n_windows, 24)
+```
+
+**Files produced:**
+```
+outputs_baseline/cnn/
+├── model_best.keras        # Best model (lowest val loss)
+├── scalers.joblib          # StandardScaler for features
+├── history.json            # Training history (loss curves)
+├── predictions_val_cnn.csv    # Validation predictions
+└── predictions_test_cnn.csv   # Test predictions
+```
+
+---
+
+#### TFT (Temporal Fusion Transformer)
+
+**Architecture:**
+- PyTorch Forecasting implementation
+- Variable selection networks for feature importance
+- Multi-head attention over encoder sequence
+- Gated residual connections
+- Encoder length: 168 hours, Prediction length: 24 hours
+
+**Files produced:**
+```
+outputs_baseline/tft/
+├── checkpoints/
+│   └── epoch=XX-step=YY.ckpt   # PyTorch Lightning checkpoint
+├── predictions_val_tft.csv
+└── predictions_test_tft.csv
+```
+
+---
+
+### 4. Predictions CSV Format
+
+All models output predictions in identical long format:
+
+```csv
+origin_timestamp_utc,forecast_timestamp_utc,horizon_h,y_true,y_pred
+2012-01-28T00:00:00+00:00,2012-01-28T01:00:00+00:00,1,0.0,0.002
+2012-01-28T00:00:00+00:00,2012-01-28T02:00:00+00:00,2,0.0,0.001
+2012-01-28T00:00:00+00:00,2012-01-29T00:00:00+00:00,24,0.0,0.003
+```
+
+**Columns:**
+- `origin_timestamp_utc`: Time when forecast is made
+- `forecast_timestamp_utc`: Time being predicted
+- `horizon_h`: Forecast horizon (1-24 hours ahead)
+- `y_true`: Actual PV value
+- `y_pred`: Model prediction
+
+---
+
+### 5. Ensemble System
+
+#### What Ensemble Does
+
+1. **Loads** validation predictions from all models
+2. **Aligns** predictions by (origin_timestamp, forecast_timestamp, horizon)
+3. **Searches** all possible model combinations (1 to N models)
+4. **Optimizes** weights using grid search to minimize RMSE
+5. **Selects** best combination based on validation performance
+
+#### Combinations Tested (3 models = 7 combinations)
+
+```
+1-model: LightGBM, CNN-BiLSTM, TFT                    (3)
+2-model: LightGBM+CNN, LightGBM+TFT, CNN+TFT          (3)
+3-model: LightGBM+CNN+TFT                             (1)
+Total: 7 combinations
+```
+
+#### Ensemble Formula
+
+```python
+y_pred_ensemble = sum(weight_i * y_pred_i)
+# weights must sum to 1.0
+
+# Example:
+# weights = [0.4, 0.35, 0.25]
+# y_pred = 0.4 * lgbm + 0.35 * cnn + 0.25 * tft
+```
+
+#### Output Files
+```
+outputs_ensemble/
+├── ensemble_weights.json       # Optimized weights
+├── predictions_val_ensemble.csv
+├── predictions_test_ensemble.csv
+└── metrics_ensemble.json
+```
+
+**`ensemble_weights.json` example:**
+```json
+{
+  "model_names": ["LightGBM", "CNN-BiLSTM", "TFT"],
+  "weights": [0.45, 0.30, 0.25],
+  "optimization_method": "exhaustive",
+  "best_val_rmse": 6.234,
+  "note": "Weights optimized on VALIDATION set to prevent data leakage"
+}
+```
+
+---
+
+### 6. Complete Command Reference
+
+#### Step 1: Preprocessing
+
+```bash
+# Generate baseline processed data (45 features)
+python scripts/data/preprocess_data.py \
+  --pv-path data/raw/pv_dataset.xlsx \
+  --wx-path data/raw/wx_dataset.xlsx \
+  --output-path outputs_baseline/processed.parquet
+
+# Generate lag72 processed data (49 features)
+python scripts/preprocessing/generate_processed_lag72.py
+```
+
+#### Step 2: Train Models
+
+```bash
+# LightGBM (fast, ~5 minutes)
+python scripts/training/train_lgbm.py \
+  --processed-path outputs_baseline/processed.parquet \
+  --outdir outputs_baseline/lgbm \
+  --use-future-meteo
+
+# CNN-BiLSTM (slow, ~3-4 hours on GPU)
+python scripts/training/train_cnn_bilstm.py \
+  --processed-path outputs_baseline/processed.parquet \
+  --outdir outputs_baseline/cnn \
+  --epochs 200 \
+  --batch-size 64 \
+  --use-future-meteo
+
+# TFT (medium, ~1-2 hours on GPU)
+python scripts/training/train_tft.py \
+  --processed-path outputs_baseline/processed.parquet \
+  --outdir outputs_baseline/tft \
+  --max-epochs 100 \
+  --use-future-meteo
+```
+
+#### Step 3: Ensemble Optimization
+
+```bash
+python scripts/evaluation/ensemble.py \
+  --lgbm-val outputs_baseline/lgbm/predictions_val_lgbm.csv \
+  --cnn-val outputs_baseline/cnn/predictions_val_cnn.csv \
+  --tft-val outputs_baseline/tft/predictions_val_tft.csv \
+  --lgbm-test outputs_baseline/lgbm/predictions_test_lgbm.csv \
+  --cnn-test outputs_baseline/cnn/predictions_test_cnn.csv \
+  --tft-test outputs_baseline/tft/predictions_test_tft.csv \
+  --outdir outputs_ensemble \
+  --method exhaustive \
+  --metric rmse
+```
+
+---
+
+### 7. Testing Professor's Dataset
+
+#### Scenario A: Raw Excel files provided
+
+```bash
+# 1. Preprocess the new data
+python scripts/data/preprocess_data.py \
+  --pv-path professor_pv.xlsx \
+  --wx-path professor_wx.xlsx \
+  --output-path professor_processed.parquet
+
+# 2. Run inference
+python scripts/inference/predict.py \
+  --processed-data professor_processed.parquet \
+  --ensemble-weights outputs_ensemble/ensemble_weights.json \
+  --model-dir outputs_baseline \
+  --outdir predictions_professor
+```
+
+#### Scenario B: Python Script
+
+```python
+import pandas as pd
+from pv_forecasting.ensemble_model import EnsembleModel
+
+# Load trained ensemble
+ensemble = EnsembleModel.from_outputs(
+    ensemble_dir="outputs_ensemble",
+    outputs_dir="outputs_baseline"
+)
+
+# Load professor's data
+prof_data = pd.read_parquet("professor_processed.parquet")
+
+# Make predictions
+predictions = ensemble.predict(prof_data)
+# predictions.shape = (n_samples, 24)
+
+# Save results
+output_df = pd.DataFrame({
+    "timestamp": prof_data.index,
+    **{f"h{h}": predictions[:, h-1] for h in range(1, 25)}
+})
+output_df.to_csv("forecast_24h.csv", index=False)
+```
+
+---
+
+### 8. Output Interpretation
+
+**Predictions values:**
+- Each value is normalized PV power [0, 1]
+- To get actual kW: `actual_kW = value * 82.41`
+- h1 = 1 hour ahead, h24 = 24 hours ahead
+
+**Metrics interpretation:**
+- MASE < 1.0 = Better than naive 24h persistence baseline
+- RMSE in kW = Lower is better
+- Performance degrades with horizon (h=1 best, h=24 worst)
