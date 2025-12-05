@@ -127,7 +127,12 @@ def main():
     # Ensemble weights
     parser.add_argument("--weights", type=str, required=True, help="path to ensemble_weights.json file")
 
-    # Model predictions (test set)
+    # Model predictions (test set) - New simple args
+    parser.add_argument("--lgbm", type=str, default=None, help="path to LightGBM test predictions")
+    parser.add_argument("--cnn", type=str, default=None, help="path to CNN-BiLSTM test predictions")
+    parser.add_argument("--tft", type=str, default=None, help="path to TFT test predictions")
+    
+    # Model predictions (test set) - Old args for backward compatibility
     parser.add_argument("--lgbm-baseline", type=str, default=None)
     parser.add_argument("--lgbm-lag72", type=str, default=None)
     parser.add_argument("--cnn-baseline", type=str, default=None)
@@ -158,7 +163,13 @@ def main():
     model_names, weights = load_ensemble_weights(Path(args.weights))
 
     # Map model names to test prediction files
+    # Supports both old naming (with -Baseline/-Lag72) and new simple naming
     model_pred_map = {
+        # New simple names (used by ensemble.py)
+        "LightGBM": args.lgbm or args.lgbm_baseline or args.lgbm_lag72,
+        "CNN-BiLSTM": args.cnn or args.cnn_baseline or args.cnn_lag72,
+        "TFT": args.tft or args.tft_baseline or args.tft_lag72,
+        # Old names (backward compatibility)
         "LightGBM-Baseline": args.lgbm_baseline,
         "LightGBM-Lag72": args.lgbm_lag72,
         "CNN-BiLSTM-Baseline": args.cnn_baseline,

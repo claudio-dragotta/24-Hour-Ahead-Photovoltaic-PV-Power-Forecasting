@@ -37,10 +37,21 @@ def parse_args() -> argparse.Namespace:
         description="ensemble optimization for PV forecasting models (supports up to 3 models)"
     )
 
-    # Model prediction paths
-    ap.add_argument("--lgbm", type=str, default=None, help="path to LightGBM predictions CSV")
-    ap.add_argument("--cnn", type=str, default=None, help="path to CNN-BiLSTM predictions CSV")
-    ap.add_argument("--tft", type=str, default=None, help="path to TFT predictions CSV")
+    # Model prediction paths - VALIDATION (for weight optimization)
+    ap.add_argument("--lgbm-val", type=str, default=None, help="path to LightGBM VALIDATION predictions CSV")
+    ap.add_argument("--cnn-val", type=str, default=None, help="path to CNN-BiLSTM VALIDATION predictions CSV")
+    ap.add_argument("--tft-val", type=str, default=None, help="path to TFT VALIDATION predictions CSV")
+    
+    # Model prediction paths - TEST (for final evaluation)
+    ap.add_argument("--lgbm-test", type=str, default=None, help="path to LightGBM TEST predictions CSV")
+    ap.add_argument("--cnn-test", type=str, default=None, help="path to CNN-BiLSTM TEST predictions CSV")
+    ap.add_argument("--tft-test", type=str, default=None, help="path to TFT TEST predictions CSV")
+    
+    # Legacy arguments (for backward compatibility)
+    ap.add_argument("--lgbm", type=str, default=None, help="[DEPRECATED] use --lgbm-val and --lgbm-test")
+    ap.add_argument("--cnn", type=str, default=None, help="[DEPRECATED] use --cnn-val and --cnn-test")
+    ap.add_argument("--tft", type=str, default=None, help="[DEPRECATED] use --tft-val and --tft-test")
+    
     ap.add_argument("--outdir", type=str, default="outputs_ensemble", help="output directory for ensemble results")
     ap.add_argument(
         "--method",
@@ -52,8 +63,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--exhaustive-min-models",
         type=int,
-        default=2,
-        help="minimum number of models for exhaustive search (default: 2)",
+        default=1,
+        help="minimum number of models for exhaustive search (default: 1, includes single models)",
     )
     ap.add_argument(
         "--exhaustive-max-models",
@@ -398,90 +409,135 @@ def exhaustive_search_ensemble(
 
 
 def main() -> None:
-    """Main ensemble optimization function."""
+    """Main ensemble optimization function.
+    
+    IMPORTANT: To prevent data leakage, this function:
+    1. Uses VALIDATION predictions to optimize ensemble weights
+    2. Applies optimized weights to TEST predictions for final evaluation
+    """
     args = parse_args()
 
     out_dir = Path(args.outdir)
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"[info] output directory: {out_dir}")
 
-    # Load predictions from all models
-    model_dfs = []
-    model_names = []
+    # Handle backward compatibility with legacy arguments
+    lgbm_val = args.lgbm_val or args.lgbm
+    cnn_val = args.cnn_val or args.cnn
+    tft_val = args.tft_val or args.tft
+    lgbm_test = args.lgbm_test or args.lgbm
+    cnn_test = args.cnn_test or args.cnn
+    tft_test = args.tft_test or args.tft
+    
+    # Warn if using legacy arguments (potential data leakage)
+    if args.lgbm or args.cnn or args.tft:
+        print("[WARNING] Using legacy arguments (--lgbm, --cnn, --tft).")
+        print("[WARNING] This may cause DATA LEAKAGE if same file is used for optimization AND evaluation!")
+        print("[WARNING] Use separate --*-val and --*-test arguments for proper evaluation.")
 
-    # Load models
-    lgbm_df = load_predictions(args.lgbm, "LightGBM")
-    if lgbm_df is not None:
-        model_dfs.append(lgbm_df)
-        model_names.append("LightGBM")
+    # Load VALIDATION predictions (for weight optimization)
+    print("\n[info] === Loading VALIDATION predictions (for weight optimization) ===")
+    val_model_dfs = []
+    val_model_names = []
 
-    cnn_df = load_predictions(args.cnn, "CNN-BiLSTM")
-    if cnn_df is not None:
-        model_dfs.append(cnn_df)
-        model_names.append("CNN-BiLSTM")
+    lgbm_val_df = load_predictions(lgbm_val, "LightGBM (val)")
+    if lgbm_val_df is not None:
+        val_model_dfs.append(lgbm_val_df)
+        val_model_names.append("LightGBM")
 
-    tft_df = load_predictions(args.tft, "TFT")
-    if tft_df is not None:
-        model_dfs.append(tft_df)
-        model_names.append("TFT")
+    cnn_val_df = load_predictions(cnn_val, "CNN-BiLSTM (val)")
+    if cnn_val_df is not None:
+        val_model_dfs.append(cnn_val_df)
+        val_model_names.append("CNN-BiLSTM")
 
-    if len(model_dfs) < 2:
+    tft_val_df = load_predictions(tft_val, "TFT (val)")
+    if tft_val_df is not None:
+        val_model_dfs.append(tft_val_df)
+        val_model_names.append("TFT")
+
+    if len(val_model_dfs) < 2:
         raise ValueError(
             "at least 2 models required for ensemble. Provide 2-3 models using:\n"
-            "  --lgbm PATH_TO_LGBM_PREDICTIONS\n"
-            "  --cnn PATH_TO_CNN_PREDICTIONS\n"
-            "  --tft PATH_TO_TFT_PREDICTIONS"
+            "  --lgbm-val PATH  --lgbm-test PATH\n"
+            "  --cnn-val PATH   --cnn-test PATH\n"
+            "  --tft-val PATH   --tft-test PATH"
         )
 
-    print(f"[info] available models: {len(model_dfs)}")
+    print(f"[info] available models: {len(val_model_dfs)}")
 
-    # Optimize ensemble weights
+    # Load TEST predictions (for final evaluation)
+    print("\n[info] === Loading TEST predictions (for final evaluation) ===")
+    test_model_dfs = []
+    test_model_names = []
+
+    lgbm_test_df = load_predictions(lgbm_test, "LightGBM (test)")
+    if lgbm_test_df is not None:
+        test_model_dfs.append(lgbm_test_df)
+        test_model_names.append("LightGBM")
+
+    cnn_test_df = load_predictions(cnn_test, "CNN-BiLSTM (test)")
+    if cnn_test_df is not None:
+        test_model_dfs.append(cnn_test_df)
+        test_model_names.append("CNN-BiLSTM")
+
+    tft_test_df = load_predictions(tft_test, "TFT (test)")
+    if tft_test_df is not None:
+        test_model_dfs.append(tft_test_df)
+        test_model_names.append("TFT")
+
+    # Verify same models for val and test
+    if val_model_names != test_model_names:
+        raise ValueError(
+            f"Model mismatch between val ({val_model_names}) and test ({test_model_names}).\n"
+            "Ensure same models are provided for both validation and test sets."
+        )
+
+    # Optimize ensemble weights on VALIDATION set
+    print(f"\n[info] {'='*60}")
+    print(f"[info] OPTIMIZING WEIGHTS ON VALIDATION SET (no data leakage)")
+    print(f"[info] {'='*60}")
+
     if args.method == "exhaustive":
         # Exhaustive search: try ALL combinations of models
         best_indices, best_weights, best_metric, selected_names = exhaustive_search_ensemble(
-            all_model_dfs=model_dfs,
-            all_model_names=model_names,
+            all_model_dfs=val_model_dfs,
+            all_model_names=val_model_names,
             min_models=args.exhaustive_min_models,
-            max_models=min(args.exhaustive_max_models, len(model_dfs)),
+            max_models=min(args.exhaustive_max_models, len(val_model_dfs)),
             metric=args.metric,
             grid_steps=args.grid_steps,
         )
 
-        # Update model_dfs and model_names to only include selected models
-        model_dfs = [model_dfs[i] for i in best_indices]
+        # Update model lists to only include selected models
+        val_model_dfs = [val_model_dfs[i] for i in best_indices]
+        test_model_dfs = [test_model_dfs[i] for i in best_indices]
         model_names = selected_names
 
         print(f"[info] selected {len(model_names)} models for final ensemble: {', '.join(model_names)}")
 
         # Align predictions for final selected models
-        aligned = align_predictions(*model_dfs)
+        val_aligned = align_predictions(*val_model_dfs)
+        test_aligned = align_predictions(*test_model_dfs)
 
     else:
         # Standard methods: use all provided models
-        print(f"[info] ensembling {len(model_dfs)} models: {', '.join(model_names)}")
+        model_names = val_model_names
+        print(f"[info] ensembling {len(val_model_dfs)} models: {', '.join(model_names)}")
 
         # Align predictions
-        aligned = align_predictions(*model_dfs)
+        val_aligned = align_predictions(*val_model_dfs)
+        test_aligned = align_predictions(*test_model_dfs)
 
         if args.method == "grid":
             best_weights, best_metric = grid_search_ensemble(
-                aligned, num_models=len(model_dfs), grid_steps=args.grid_steps, metric=args.metric
+                val_aligned, num_models=len(val_model_dfs), grid_steps=args.grid_steps, metric=args.metric
             )
         elif args.method == "optuna":
             best_weights, best_metric = optuna_ensemble(
-                aligned, num_models=len(model_dfs), n_trials=args.optuna_trials, metric=args.metric
+                val_aligned, num_models=len(val_model_dfs), n_trials=args.optuna_trials, metric=args.metric
             )
         else:
             raise ValueError(f"unknown optimization method: {args.method}")
-
-    # Generate ensemble predictions
-    y_pred_ensemble = ensemble_predict(aligned, best_weights, len(model_dfs))
-    aligned["y_pred_ensemble"] = y_pred_ensemble
-
-    # Save ensemble predictions
-    ensemble_pred_path = out_dir / "predictions_val_ensemble.csv"
-    aligned.to_csv(ensemble_pred_path, index=False)
-    print(f"[info] saved ensemble predictions to {ensemble_pred_path}")
 
     # Save ensemble weights
     weights_dict = {
@@ -489,47 +545,73 @@ def main() -> None:
         "weights": [float(w) for w in best_weights],
         "optimization_method": args.method,
         "optimization_metric": args.metric,
-        f"best_{args.metric}": float(best_metric),
+        f"best_val_{args.metric}": float(best_metric),
+        "note": "Weights optimized on VALIDATION set to prevent data leakage"
     }
     weights_path = out_dir / "ensemble_weights.json"
     weights_path.write_text(json.dumps(weights_dict, indent=2))
     print(f"[info] saved ensemble weights to {weights_path}")
 
-    # Compute final metrics for all models + ensemble
-    print("\n[info] final metrics comparison:")
-    y_true = aligned["y_true"].values
+    # Generate ensemble predictions on VALIDATION set
+    val_aligned["y_pred_ensemble"] = ensemble_predict(val_aligned, best_weights, len(model_names))
+    val_pred_path = out_dir / "predictions_val_ensemble.csv"
+    val_aligned.to_csv(val_pred_path, index=False)
+    print(f"[info] saved validation ensemble predictions to {val_pred_path}")
+
+    # Apply weights to TEST set for final evaluation
+    print(f"\n[info] {'='*60}")
+    print(f"[info] APPLYING WEIGHTS TO TEST SET (final evaluation)")
+    print(f"[info] {'='*60}")
+
+    y_pred_ensemble_test = ensemble_predict(test_aligned, best_weights, len(model_names))
+    test_aligned["y_pred_ensemble"] = y_pred_ensemble_test
+
+    # Save test ensemble predictions
+    test_pred_path = out_dir / "predictions_test_ensemble.csv"
+    test_aligned.to_csv(test_pred_path, index=False)
+    print(f"[info] saved test ensemble predictions to {test_pred_path}")
+
+    # Compute final metrics on TEST set
+    print("\n[info] === FINAL METRICS ON TEST SET ===")
+    y_true_test = test_aligned["y_true"].values
 
     # Individual model metrics
     for i, name in enumerate(model_names):
-        y_pred = aligned[f"pred_{i}"].values
-        rmse_val = compute_rmse(y_true, y_pred)
-        mae_val = compute_mae(y_true, y_pred)
+        y_pred = test_aligned[f"pred_{i}"].values
+        rmse_val = compute_rmse(y_true_test, y_pred)
+        mae_val = compute_mae(y_true_test, y_pred)
         print(f"  {name:12s} - RMSE: {rmse_val:.6f}, MAE: {mae_val:.6f}")
 
     # Ensemble metrics
-    rmse_ens = compute_rmse(y_true, y_pred_ensemble)
-    mae_ens = compute_mae(y_true, y_pred_ensemble)
+    rmse_ens = compute_rmse(y_true_test, y_pred_ensemble_test)
+    mae_ens = compute_mae(y_true_test, y_pred_ensemble_test)
     print(f"  {'Ensemble':12s} - RMSE: {rmse_ens:.6f}, MAE: {mae_ens:.6f}")
 
     # Save metrics summary
     metrics_summary = {
-        "individual_models": {
-            name: {
-                "rmse": float(compute_rmse(y_true, aligned[f"pred_{i}"].values)),
-                "mae": float(compute_mae(y_true, aligned[f"pred_{i}"].values)),
-            }
-            for i, name in enumerate(model_names)
+        "validation_set": {
+            f"ensemble_{args.metric}": float(best_metric),
         },
-        "ensemble": {
-            "rmse": float(rmse_ens),
-            "mae": float(mae_ens),
+        "test_set": {
+            "individual_models": {
+                name: {
+                    "rmse": float(compute_rmse(y_true_test, test_aligned[f"pred_{i}"].values)),
+                    "mae": float(compute_mae(y_true_test, test_aligned[f"pred_{i}"].values)),
+                }
+                for i, name in enumerate(model_names)
+            },
+            "ensemble": {
+                "rmse": float(rmse_ens),
+                "mae": float(mae_ens),
+            },
         },
+        "note": "Weights optimized on validation set, metrics computed on test set (no data leakage)"
     }
     metrics_path = out_dir / "metrics_ensemble.json"
     metrics_path.write_text(json.dumps(metrics_summary, indent=2))
     print(f"[info] saved metrics summary to {metrics_path}")
 
-    print("\n[info] ensemble optimization completed successfully")
+    print("\n[info] ensemble optimization completed successfully (no data leakage!)")
 
 
 if __name__ == "__main__":
