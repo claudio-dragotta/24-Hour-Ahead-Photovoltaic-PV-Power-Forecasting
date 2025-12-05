@@ -124,7 +124,7 @@ def load_wx_xlsx(path: Path) -> pd.DataFrame:
         # Cast numeric where possible (coerce non-numeric to NaN)
         # EXCEPT for weather_description which is categorical and will be encoded later
         for c in feat_df.columns:
-            if 'weather' in c.lower() and 'description' in c.lower():
+            if "weather" in c.lower() and "description" in c.lower():
                 continue  # Keep weather_description as string for encoding later
             try:
                 feat_df[c] = pd.to_numeric(feat_df[c], errors="coerce")
@@ -191,7 +191,7 @@ def align_hourly(pv: pd.DataFrame, wx: pd.DataFrame, keep_wx_future: bool = Fals
 
     # Keep numeric columns + weather_description (will be encoded later)
     numeric_cols = wx_h.select_dtypes(include=[np.number]).columns.tolist()
-    weather_desc_cols = [c for c in wx_h.columns if 'weather' in c.lower() and 'description' in c.lower()]
+    weather_desc_cols = [c for c in wx_h.columns if "weather" in c.lower() and "description" in c.lower()]
     keep_cols = numeric_cols + weather_desc_cols
     wx_h = wx_h[keep_cols]
 

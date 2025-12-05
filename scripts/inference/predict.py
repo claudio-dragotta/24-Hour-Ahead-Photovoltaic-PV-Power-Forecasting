@@ -26,7 +26,9 @@ def parse_args():
     ap = argparse.ArgumentParser(description="Generate 24h-ahead predictions with LightGBM/TFT ensemble")
     ap.add_argument("--pv-path", type=str, default="data/raw/pv_dataset.xlsx")
     ap.add_argument("--wx-path", type=str, default="data/raw/wx_dataset.xlsx")
-    ap.add_argument("--future-wx-path", type=str, default=None, help="Optional future weather forecast file (csv/parquet/xlsx)")
+    ap.add_argument(
+        "--future-wx-path", type=str, default=None, help="Optional future weather forecast file (csv/parquet/xlsx)"
+    )
     ap.add_argument("--local-tz", type=str, default="Australia/Sydney")
     ap.add_argument("--lgbm-dir", type=str, default="outputs_lgbm")
     ap.add_argument("--tft-ckpt", type=str, default="outputs_tft/tft-best.ckpt")
@@ -153,10 +155,10 @@ def predict_tft(
     past_unknown: List[str],
     ckpt_path: Path,
 ) -> pd.DataFrame:
+    import torch
     from pytorch_forecasting import TimeSeriesDataSet
     from pytorch_forecasting.data.encoders import GroupNormalizer
     from pytorch_forecasting.models import TemporalFusionTransformer
-    import torch
 
     if not ckpt_path.exists():
         return pd.DataFrame()
@@ -264,13 +266,29 @@ def main():
     if not feature_cols:
         feature_cols = [c for c in df.columns if c not in {"pv", "series_id"}]
 
-    preds_lgbm = predict_lightgbm(df, feature_cols=feature_cols, models_dir=Path(args.lgbm_dir) / "models", horizon=horizon)
+    preds_lgbm = predict_lightgbm(
+        df, feature_cols=feature_cols, models_dir=Path(args.lgbm_dir) / "models", horizon=horizon
+    )
 
     preds_tft = pd.DataFrame()
     if not args.disable_tft and Path(args.tft_ckpt).exists():
         known_future = cfg_tft.get(
             "known_future",
-            [c for c in ["hour_sin", "hour_cos", "doy_sin", "doy_cos", "sp_zenith", "sp_azimuth", "cs_ghi", "cs_dni", "cs_dhi"] if c in df.columns],
+            [
+                c
+                for c in [
+                    "hour_sin",
+                    "hour_cos",
+                    "doy_sin",
+                    "doy_cos",
+                    "sp_zenith",
+                    "sp_azimuth",
+                    "cs_ghi",
+                    "cs_dni",
+                    "cs_dhi",
+                ]
+                if c in df.columns
+            ],
         )
         raw_unknown = [
             c
@@ -281,7 +299,14 @@ def main():
             or c == "kc"
         ]
         past_unknown = cfg_tft.get("past_unknown", raw_unknown)
-        preds_tft = predict_tft(df, seq_len=cfg_tft.get("seq_len", 168), horizon=horizon, known_future=known_future, past_unknown=past_unknown, ckpt_path=Path(args.tft_ckpt))
+        preds_tft = predict_tft(
+            df,
+            seq_len=cfg_tft.get("seq_len", 168),
+            horizon=horizon,
+            known_future=known_future,
+            past_unknown=past_unknown,
+            ckpt_path=Path(args.tft_ckpt),
+        )
 
     # Merge and ensemble
     merged = preds_lgbm
@@ -299,7 +324,9 @@ def main():
         weight_tft = 0.5
 
     if "y_pred_tft" in merged.columns and not merged["y_pred_tft"].isna().all():
-        merged["y_pred_ensemble"] = weight_tft * merged["y_pred_tft"].fillna(merged["y_pred_lgbm"]) + (1 - weight_tft) * merged["y_pred_lgbm"]
+        merged["y_pred_ensemble"] = (
+            weight_tft * merged["y_pred_tft"].fillna(merged["y_pred_lgbm"]) + (1 - weight_tft) * merged["y_pred_lgbm"]
+        )
     else:
         merged["y_pred_ensemble"] = merged["y_pred_lgbm"]
     merged.to_csv(out_dir / "predictions_next24.csv", index=False)

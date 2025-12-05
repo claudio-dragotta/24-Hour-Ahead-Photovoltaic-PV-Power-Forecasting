@@ -34,10 +34,10 @@ jobs:
           pip install black isort mypy
 
       - name: Run Black
-        run: black --check --diff pv_forecasting/ tests/ *.py
+        run: black --check --diff pv_forecasting/ tests/ scripts/
 
       - name: Run isort
-        run: isort --check --diff pv_forecasting/ tests/ *.py
+        run: isort --check --diff pv_forecasting/ tests/ scripts/
 
       - name: Run mypy
         run: mypy pv_forecasting/ --ignore-missing-imports
@@ -54,6 +54,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5

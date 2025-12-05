@@ -211,6 +211,6 @@ class TestClearnessIndex:
 
         result = add_kc(df, ghi_col="ghi")
 
-        # Should handle division by zero gracefully (set to 0 or 1)
+        # When clearsky is zero (night), kc should be NaN (undefined)
         assert "kc" in result.columns
-        assert not result["kc"].isna().all()
+        assert result["kc"].isna().all()  # All NaN at night is correct behavior

@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pv_forecasting.data import align_hourly, standardize_feature_columns
+from pv_forecasting.data import align_hourly
+from pv_forecasting.features import standardize_feature_columns
 
 
 class TestAlignHourly:
@@ -32,12 +33,8 @@ class TestAlignHourly:
 
     def test_align_handles_missing_data(self):
         """Test alignment with non-overlapping data."""
-        pv = pd.DataFrame(
-            {"pv": [0.5, 0.6, 0.7]}, index=pd.date_range("2010-01-01", periods=3, freq="H", tz="UTC")
-        )
-        wx = pd.DataFrame(
-            {"ghi": [100, 200, 300]}, index=pd.date_range("2010-01-02", periods=3, freq="H", tz="UTC")
-        )
+        pv = pd.DataFrame({"pv": [0.5, 0.6, 0.7]}, index=pd.date_range("2010-01-01", periods=3, freq="H", tz="UTC"))
+        wx = pd.DataFrame({"ghi": [100, 200, 300]}, index=pd.date_range("2010-01-02", periods=3, freq="H", tz="UTC"))
 
         result = align_hourly(pv, wx)
 
