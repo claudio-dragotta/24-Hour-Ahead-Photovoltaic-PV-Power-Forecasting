@@ -49,15 +49,14 @@ This project follows professional software engineering best practices:
 - **Structured Logging**: Professional logging framework for debugging and monitoring
 - **Versioning**: Semantic versioning with `__version__` attribute
 
-### Experimental Setup: 6-Model Ensemble Strategy
+### Experimental Setup: 3-Model Ensemble with Solar Weighting
 
-This project implements a **comprehensive comparison framework** to identify optimal feature configurations:
+This project implements a **state-of-the-art ensemble system** with physics-informed sample weighting:
 
-**Two Feature Configurations:**
-
-- **Baseline** (45 features): Standard lags (1h, 24h, 168h)
-- **Lag72** (49 features): **Enhanced with 3-day lag** (1h, 24h, **72h**, 168h)
-  - Rationale: Weather patterns persist 2-4 days → knowing conditions 3 days ago improves forecasts
+**Unified Feature Set** (49 features):
+- Standard lags: 1h, 24h, **72h** (3-day), 168h (1-week)
+- Rationale: Weather patterns persist 2-4 days → 3-day lag improves forecasts
+- Solar position, clear-sky estimates, and clearness index (physics-informed features)
 
 **Three Model Architectures:**
 
@@ -65,18 +64,22 @@ This project implements a **comprehensive comparison framework** to identify opt
 - **CNN-BiLSTM**: Deep learning with Conv1D + bidirectional LSTM (sequence-to-sequence)
 - **TFT** (Temporal Fusion Transformer): State-of-the-art attention-based forecasting
 
-#### Total: 6 Models = 3 architectures × 2 feature sets
+**Solar-Weighted Training:**
+
+All three models use **sample weighting based on solar zenith angle** to prioritize daylight hours:
+- Weight formula: `cos(zenith) + 0.1`, normalized to mean=1.0
+- Effect: Night hours (weight ≈ 0.3) vs peak sun (weight ≈ 3.1)
+- Goal: Improve MASE by focusing on accurate daytime predictions
 
 **Ensemble Strategy:**
 
-1. Train all 6 models independently
-2. Compare baseline vs lag72 for each architecture
-3. Optimize ensemble weights using grid search or Optuna
-4. Create final ensemble from best-performing models (weighted by validation performance)
+1. Train all 3 models with solar weighting
+2. Optimize ensemble weights using exhaustive search (tests all combinations)
+3. Automatically select best combination (2 or 3 models) with optimal weights
 
 **Key Benefits:**
 
-- Identifies impact of 3-day lag features per model type
+- Physics-informed weighting improves daytime accuracy (where PV matters most)
 - Diversifies predictions across architectures (tree-based + deep learning)
 - Leverages strengths: LightGBM excels at short horizons (h=1-12), CNN/TFT at long horizons (h=13-24)
 

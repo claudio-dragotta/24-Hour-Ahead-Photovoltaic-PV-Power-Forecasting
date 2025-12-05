@@ -24,6 +24,29 @@ def set_seed(seed: int = 42):
     tf.random.set_seed(seed)
 
 
+def compute_solar_weights(zenith_deg: pd.Series, min_weight: float = 0.1) -> np.ndarray:
+    """Compute sample weights based on solar zenith angle.
+
+    Higher weights during daytime (low zenith) and lower weights at night (high zenith).
+    Uses cosine of zenith angle as it represents solar irradiance intensity.
+
+    Args:
+        zenith_deg: Solar zenith angle in degrees (0° = sun overhead, 90° = horizon)
+        min_weight: Minimum weight to assign (prevents zero weights at night)
+
+    Returns:
+        Array of sample weights normalized to mean=1.0
+    """
+    zenith_rad = np.deg2rad(zenith_deg.values)
+    # cos(zenith) ranges from 1 (sun overhead) to 0 (horizon) to negative (night)
+    cos_zenith = np.cos(zenith_rad)
+    # Clip to [0, 1] and add minimum weight
+    weights = np.maximum(cos_zenith, 0.0) + min_weight
+    # Normalize to mean=1.0 to preserve overall scale
+    weights = weights / weights.mean()
+    return weights
+
+
 def parse_args():
     ap = argparse.ArgumentParser(description="24h-ahead PV Forecasting")
     ap.add_argument(
@@ -108,6 +131,30 @@ def main():
     Xval = apply_scale(Xval_raw)
     Xte = apply_scale(Xte_raw)
 
+    # Compute solar-based sample weights for train and val sets
+    if "sp_zenith" in df.columns:
+        # Create a mapping from timestamp to sp_zenith
+        zenith_map = df.set_index(df.index)["sp_zenith"]
+
+        # Extract zenith values for each window origin
+        train_zenith = pd.Series([zenith_map.loc[ts] for ts in origins_tr], index=range(len(origins_tr)))
+        val_zenith = pd.Series([zenith_map.loc[ts] for ts in origins_val], index=range(len(origins_val)))
+
+        train_weights = compute_solar_weights(train_zenith)
+        val_weights = compute_solar_weights(val_zenith)
+
+        print(f"\n{'='*60}")
+        print(f"Training CNN-BiLSTM with solar-weighted samples")
+        print(f"Train weights: min={train_weights.min():.3f}, max={train_weights.max():.3f}, mean={train_weights.mean():.3f}")
+        print(f"Val weights: min={val_weights.min():.3f}, max={val_weights.max():.3f}, mean={val_weights.mean():.3f}")
+        print(f"{'='*60}\n")
+    else:
+        train_weights = None
+        val_weights = None
+        print(f"\n{'='*60}")
+        print(f"Training CNN-BiLSTM (no solar weights)")
+        print(f"{'='*60}\n")
+
     # Build and train model
     model = build_cnn_bilstm(input_shape=(args.seq_len, n_features), horizon=args.horizon)
     callbacks = [
@@ -125,10 +172,18 @@ def main():
     print(f"Epochs: {args.epochs} (with early stopping patience={15})")
     print(f"Batch size: {args.batch_size}")
     print()
+
+    # Prepare validation_data with sample weights if available
+    if val_weights is not None:
+        validation_data = (Xval, Yval, val_weights)
+    else:
+        validation_data = (Xval, Yval)
+
     history = model.fit(
         Xtr,
         Ytr,
-        validation_data=(Xval, Yval),
+        validation_data=validation_data,
+        sample_weight=train_weights,
         epochs=args.epochs,
         batch_size=args.batch_size,
         verbose=2,

@@ -3,7 +3,7 @@
 This module implements weighted ensemble combining predictions from:
 - Temporal Fusion Transformer (TFT)
 - LightGBM multi-horizon model
-- CNN-BiLSTM (optional)
+- CNN-BiLSTM
 
 The ensemble weights are optimized using grid search or Optuna to minimize RMSE.
 """
@@ -34,30 +34,13 @@ def parse_args() -> argparse.Namespace:
         Parsed arguments namespace.
     """
     ap = argparse.ArgumentParser(
-        description="ensemble optimization for PV forecasting models (supports up to 6 models)"
+        description="ensemble optimization for PV forecasting models (supports up to 3 models)"
     )
 
-    # Legacy parameters (for backwards compatibility)
-    ap.add_argument(
-        "--tft", type=str, default=None, help="path to TFT predictions CSV (legacy, use --tft-baseline instead)"
-    )
-    ap.add_argument(
-        "--lgbm", type=str, default=None, help="path to LightGBM predictions CSV (legacy, use --lgbm-baseline instead)"
-    )
-    ap.add_argument(
-        "--bilstm",
-        type=str,
-        default=None,
-        help="path to CNN-BiLSTM predictions CSV (legacy, use --cnn-baseline instead)",
-    )
-
-    # New 6-model parameters (baseline + lag72)
-    ap.add_argument("--lgbm-baseline", type=str, default=None, help="path to LightGBM baseline predictions CSV")
-    ap.add_argument("--lgbm-lag72", type=str, default=None, help="path to LightGBM lag72 predictions CSV")
-    ap.add_argument("--cnn-baseline", type=str, default=None, help="path to CNN-BiLSTM baseline predictions CSV")
-    ap.add_argument("--cnn-lag72", type=str, default=None, help="path to CNN-BiLSTM lag72 predictions CSV")
-    ap.add_argument("--tft-baseline", type=str, default=None, help="path to TFT baseline predictions CSV")
-    ap.add_argument("--tft-lag72", type=str, default=None, help="path to TFT lag72 predictions CSV")
+    # Model prediction paths
+    ap.add_argument("--lgbm", type=str, default=None, help="path to LightGBM predictions CSV")
+    ap.add_argument("--cnn", type=str, default=None, help="path to CNN-BiLSTM predictions CSV")
+    ap.add_argument("--tft", type=str, default=None, help="path to TFT predictions CSV")
     ap.add_argument("--outdir", type=str, default="outputs_ensemble", help="output directory for ensemble results")
     ap.add_argument(
         "--method",
@@ -75,8 +58,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--exhaustive-max-models",
         type=int,
-        default=6,
-        help="maximum number of models for exhaustive search (default: 6)",
+        default=3,
+        help="maximum number of models for exhaustive search (default: 3)",
     )
     ap.add_argument(
         "--grid-steps", type=int, default=11, help="number of steps for grid search (default: 11 => 0.0, 0.1, ..., 1.0)"
@@ -422,49 +405,32 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"[info] output directory: {out_dir}")
 
-    # Load predictions from all models (new 6-model system)
+    # Load predictions from all models
     model_dfs = []
     model_names = []
 
-    # Load baseline models
-    lgbm_base_df = load_predictions(args.lgbm_baseline or args.lgbm, "LightGBM-Baseline")
-    if lgbm_base_df is not None:
-        model_dfs.append(lgbm_base_df)
-        model_names.append("LightGBM-Baseline")
+    # Load models
+    lgbm_df = load_predictions(args.lgbm, "LightGBM")
+    if lgbm_df is not None:
+        model_dfs.append(lgbm_df)
+        model_names.append("LightGBM")
 
-    cnn_base_df = load_predictions(args.cnn_baseline or args.bilstm, "CNN-BiLSTM-Baseline")
-    if cnn_base_df is not None:
-        model_dfs.append(cnn_base_df)
-        model_names.append("CNN-BiLSTM-Baseline")
+    cnn_df = load_predictions(args.cnn, "CNN-BiLSTM")
+    if cnn_df is not None:
+        model_dfs.append(cnn_df)
+        model_names.append("CNN-BiLSTM")
 
-    tft_base_df = load_predictions(args.tft_baseline or args.tft, "TFT-Baseline")
-    if tft_base_df is not None:
-        model_dfs.append(tft_base_df)
-        model_names.append("TFT-Baseline")
-
-    # Load lag72 models
-    lgbm_lag72_df = load_predictions(args.lgbm_lag72, "LightGBM-Lag72")
-    if lgbm_lag72_df is not None:
-        model_dfs.append(lgbm_lag72_df)
-        model_names.append("LightGBM-Lag72")
-
-    cnn_lag72_df = load_predictions(args.cnn_lag72, "CNN-BiLSTM-Lag72")
-    if cnn_lag72_df is not None:
-        model_dfs.append(cnn_lag72_df)
-        model_names.append("CNN-BiLSTM-Lag72")
-
-    tft_lag72_df = load_predictions(args.tft_lag72, "TFT-Lag72")
-    if tft_lag72_df is not None:
-        model_dfs.append(tft_lag72_df)
-        model_names.append("TFT-Lag72")
+    tft_df = load_predictions(args.tft, "TFT")
+    if tft_df is not None:
+        model_dfs.append(tft_df)
+        model_names.append("TFT")
 
     if len(model_dfs) < 2:
         raise ValueError(
-            "at least 2 models required for ensemble. Provide 2-6 models using:\n"
-            "  --lgbm-baseline, --lgbm-lag72\n"
-            "  --cnn-baseline, --cnn-lag72\n"
-            "  --tft-baseline, --tft-lag72\n"
-            "Or use legacy args: --lgbm, --cnn, --tft"
+            "at least 2 models required for ensemble. Provide 2-3 models using:\n"
+            "  --lgbm PATH_TO_LGBM_PREDICTIONS\n"
+            "  --cnn PATH_TO_CNN_PREDICTIONS\n"
+            "  --tft PATH_TO_TFT_PREDICTIONS"
         )
 
     print(f"[info] available models: {len(model_dfs)}")
