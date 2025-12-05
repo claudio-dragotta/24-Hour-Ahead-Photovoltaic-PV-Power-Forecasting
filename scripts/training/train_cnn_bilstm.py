@@ -48,7 +48,7 @@ def compute_solar_weights(zenith_deg: pd.Series, min_weight: float = 0.1) -> np.
 
 
 def parse_args():
-    ap = argparse.ArgumentParser(description="24h-ahead PV Forecasting")
+    ap = argparse.ArgumentParser(description="24h-ahead PV Forecasting with CNN-BiLSTM")
     ap.add_argument(
         "--processed-path",
         type=str,
@@ -63,7 +63,39 @@ def parse_args():
     ap.add_argument("--epochs", type=int, default=200)
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--outdir", type=str, default="outputs_cnn")
+    ap.add_argument(
+        "--use-future-meteo",
+        action="store_true",
+        help="Use future weather data as features (simulated NWP mode)",
+    )
     return ap.parse_args()
+
+
+def add_future_meteo_features(df: pd.DataFrame, horizon: int, future_cols: list) -> pd.DataFrame:
+    """Add future meteorological features shifted by forecast horizon.
+    
+    For each horizon h (1 to 24), creates features like ghi_fut_h1, temp_fut_h2, etc.
+    These represent the actual weather values at the forecast time, simulating
+    perfect NWP forecasts as done in MATNet paper.
+    
+    Args:
+        df: DataFrame with weather columns
+        horizon: Forecast horizon (typically 24)
+        future_cols: List of weather column names to shift
+        
+    Returns:
+        DataFrame with additional future meteo columns
+    """
+    data = df.copy()
+    added_cols = []
+    for h in range(1, horizon + 1):
+        for col in future_cols:
+            if col in data.columns:
+                new_col = f"{col}_fut_h{h}"
+                data[new_col] = data[col].shift(-h)
+                added_cols.append(new_col)
+    print(f"Added {len(added_cols)} future meteo features for horizons 1-{horizon}")
+    return data
 
 
 def main():
@@ -92,6 +124,20 @@ def main():
         # Save processed
         persist_processed(df, out_dir)
         print(f"Saved processed data to outputs/processed.parquet")
+
+    # Add future meteo features if requested (simulated NWP mode)
+    if args.use_future_meteo:
+        future_cols = ["ghi", "dni", "dhi", "temp", "humidity", "clouds_all", "wind_speed"]
+        print(f"\n{'='*60}")
+        print(f"FUTURE METEO MODE ENABLED (simulated NWP)")
+        print(f"Adding future weather features: {future_cols}")
+        print(f"{'='*60}\n")
+        df = add_future_meteo_features(df, args.horizon, future_cols)
+        # Drop rows with NaN from the future shift
+        df = df.dropna()
+        print(f"After adding future meteo: {len(df)} samples, {len(df.columns)} features")
+    else:
+        print(f"\nStandard mode: no future meteo features")
 
     # Scale features (fit on train only)
     feature_cols = [c for c in df.columns if c not in {"pv", "time_idx", "series_id"}]
@@ -194,7 +240,27 @@ def main():
     dump(scaler, out_dir / "scalers.joblib")
     save_history(history.history, out_dir)
 
-    # Predictions and metrics
+    # Predictions on VALIDATION set (for ensemble weight optimization - no data leakage)
+    Yhat_val = model.predict(Xval, verbose=0)
+    val_rows = []
+    for i in range(len(origins_val)):
+        origin = pd.Timestamp(origins_val[i]).tz_convert("UTC")
+        base_ts = origin + pd.Timedelta(hours=1)
+        for h in range(args.horizon):
+            val_rows.append(
+                {
+                    "origin_timestamp_utc": origin.isoformat(),
+                    "forecast_timestamp_utc": (base_ts + pd.Timedelta(hours=h)).isoformat(),
+                    "horizon_h": h + 1,
+                    "y_true": float(Yval[i, h]),
+                    "y_pred": float(Yhat_val[i, h]),
+                }
+            )
+    val_pred_df = pd.DataFrame(val_rows)
+    val_pred_df.to_csv(out_dir / "predictions_val_cnn.csv", index=False)
+    print(f"✓ Saved {len(val_pred_df)} validation predictions")
+
+    # Predictions on TEST set (for final evaluation only)
     Yhat = model.predict(Xte, verbose=0)
 
     # Naive baseline: PV(t) = PV(t-24). In sliding windows, the last 24 PV values of the input correspond to previous day.
@@ -223,7 +289,7 @@ def main():
         }
     )
 
-    # Export predictions (long format)
+    # Export TEST predictions (long format)
     rows = []
     for i in range(len(origins_te)):
         origin = pd.Timestamp(origins_te[i]).tz_convert("UTC")
@@ -240,6 +306,7 @@ def main():
             )
     pred_df = pd.DataFrame(rows)
     pred_df.to_csv(out_dir / "predictions_test_cnn.csv", index=False)
+    print(f"✓ Saved {len(pred_df)} test predictions")
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ model:
   learning_rate: 0.001       # Initial learning rate (Adam optimizer)
   val_ratio: 0.2             # Validation split ratio (chronological)
   seed: 42
-  use_future_meteo: false    # Set to true if NWP forecasts available
+  use_future_meteo: true     # Use future weather as features (simulated NWP)
 
 # TFT-specific hyperparameters (PyTorch Forecasting)
 tft:
