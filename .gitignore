@@ -61,28 +61,28 @@ dmypy.json
 .pyre/
 .pytype/
 
-# Data files (IMPORTANT: Don't commit raw/processed data)
-data/raw/*.xlsx
-data/raw/*.csv
-data/raw/*.parquet
+# Data files - Allow raw data for portability
+# data/raw/*.xlsx
+# data/raw/*.csv
+# data/raw/*.parquet
 data/processed/*.csv
 data/processed/*.parquet
 data/processed/*.xlsx
 data/processed/*.joblib
 
-# Model outputs (IMPORTANT: Don't commit trained models)
-outputs/
-outputs_*/
-models/
-checkpoints/
-*.keras
-*.h5
-*.pth
-*.pt
-*.ckpt
-*.joblib
-*.pkl
-*.pickle
+# Model outputs - Allow trained models for portability
+# outputs/
+# outputs_*/
+# models/
+# checkpoints/
+# *.keras
+# *.h5
+# *.pth
+# *.pt
+# *.ckpt
+# *.joblib
+# *.pkl
+# *.pickle
 
 # Training logs
 logs/
@@ -113,4 +113,4 @@ temp/
 # Documentation build
 docs/_build/
 site/
-METRICS_ANALYSIS.md
+# METRICS_ANALYSIS.md
