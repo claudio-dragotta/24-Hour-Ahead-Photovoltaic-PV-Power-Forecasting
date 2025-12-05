@@ -1,0 +1,194 @@
+[
+  {
+    "feature": "doy_cos",
+    "importance": 1166.0416666666667
+  },
+  {
+    "feature": "clouds",
+    "importance": 1007.5833333333334
+  },
+  {
+    "feature": "pressure",
+    "importance": 1000.3333333333334
+  },
+  {
+    "feature": "doy_sin",
+    "importance": 901.2916666666666
+  },
+  {
+    "feature": "sp_azimuth",
+    "importance": 897.75
+  },
+  {
+    "feature": "wind_deg",
+    "importance": 857.7083333333334
+  },
+  {
+    "feature": "dew_point",
+    "importance": 753.2083333333334
+  },
+  {
+    "feature": "temp",
+    "importance": 725.6666666666666
+  },
+  {
+    "feature": "rain_1h",
+    "importance": 704.4166666666666
+  },
+  {
+    "feature": "time_idx",
+    "importance": 656.8333333333334
+  },
+  {
+    "feature": "wind_speed",
+    "importance": 597.125
+  },
+  {
+    "feature": "humidity",
+    "importance": 559.125
+  },
+  {
+    "feature": "sp_zenith",
+    "importance": 465.0416666666667
+  },
+  {
+    "feature": "pv",
+    "importance": 430.75
+  },
+  {
+    "feature": "hour_sin",
+    "importance": 381.25
+  },
+  {
+    "feature": "dni_roll6h",
+    "importance": 276.375
+  },
+  {
+    "feature": "ghi_roll6h",
+    "importance": 246.25
+  },
+  {
+    "feature": "hour_cos",
+    "importance": 238.75
+  },
+  {
+    "feature": "pv_roll6h",
+    "importance": 230.125
+  },
+  {
+    "feature": "pv_lag24",
+    "importance": 208.95833333333334
+  },
+  {
+    "feature": "dni_lag24",
+    "importance": 205.25
+  },
+  {
+    "feature": "pv_lag168",
+    "importance": 200.875
+  },
+  {
+    "feature": "dhi_lag72",
+    "importance": 190.54166666666666
+  },
+  {
+    "feature": "dni_lag72",
+    "importance": 186.5
+  },
+  {
+    "feature": "pv_lag72",
+    "importance": 185.91666666666666
+  },
+  {
+    "feature": "dni_lag168",
+    "importance": 175.58333333333334
+  },
+  {
+    "feature": "ghi_lag24",
+    "importance": 169.29166666666666
+  },
+  {
+    "feature": "weather_description",
+    "importance": 167.375
+  },
+  {
+    "feature": "ghi_lag168",
+    "importance": 165.125
+  },
+  {
+    "feature": "dhi_lag168",
+    "importance": 165.08333333333334
+  },
+  {
+    "feature": "dhi",
+    "importance": 164.66666666666666
+  },
+  {
+    "feature": "dhi_lag24",
+    "importance": 162.83333333333334
+  },
+  {
+    "feature": "ghi_lag72",
+    "importance": 161.625
+  },
+  {
+    "feature": "dhi_lag1",
+    "importance": 159.95833333333334
+  },
+  {
+    "feature": "pv_roll3h",
+    "importance": 147.08333333333334
+  },
+  {
+    "feature": "kc",
+    "importance": 146.58333333333334
+  },
+  {
+    "feature": "dni_roll3h",
+    "importance": 121.875
+  },
+  {
+    "feature": "pv_lag1",
+    "importance": 121.45833333333333
+  },
+  {
+    "feature": "dni",
+    "importance": 119.375
+  },
+  {
+    "feature": "ghi_roll3h",
+    "importance": 115.375
+  },
+  {
+    "feature": "cs_dni",
+    "importance": 104.375
+  },
+  {
+    "feature": "cs_dhi",
+    "importance": 95.66666666666667
+  },
+  {
+    "feature": "ghi_lag1",
+    "importance": 93.29166666666667
+  },
+  {
+    "feature": "ghi",
+    "importance": 92.70833333333333
+  },
+  {
+    "feature": "dni_lag1",
+    "importance": 89.25
+  },
+  {
+    "feature": "cs_ghi",
+    "importance": 78.375
+  },
+  {
+    "feature": "lat",
+    "importance": 0.0
+  },
+  {
+    "feature": "lon",
+    "importance": 0.0
+  }
+]

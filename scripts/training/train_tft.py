@@ -158,7 +158,7 @@ def main() -> None:
         max_prediction_length=max_prediction_length,
         time_varying_known_reals=sorted(set(known_future)),
         time_varying_unknown_reals=[target] + sorted(set(past_unknown)),
-        target_normalizer=GroupNormalizer(groups=["series_id"], transformation="standard"),
+        target_normalizer=GroupNormalizer(groups=["series_id"]),
         allow_missing_timesteps=True,
     )
 
