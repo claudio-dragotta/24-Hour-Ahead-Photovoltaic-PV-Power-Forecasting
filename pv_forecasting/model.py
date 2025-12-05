@@ -46,4 +46,3 @@ def build_cnn_bilstm(input_shape: Tuple[int, int], horizon: int) -> keras.Model:
         stacklevel=2,
     )
     return _build_cnn_bilstm(input_shape, horizon)
-

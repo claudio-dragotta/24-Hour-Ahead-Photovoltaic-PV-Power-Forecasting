@@ -24,7 +24,6 @@ from .features import (
     standardize_feature_columns,
 )
 
-
 DEFAULT_LAG_HOURS: Tuple[int, ...] = (1, 24, 168)
 """Default lag periods: 1h (recent), 24h (daily), 168h (weekly)."""
 
@@ -140,7 +139,7 @@ def load_and_engineer_features(
     if dropna:
         # Drop rows with NaN only in critical numeric columns (lag features, target, irradiance)
         # Keep text columns like 'weather_description' even if NaN
-        critical_cols = [c for c in df.columns if any(x in c for x in ['pv', 'ghi', 'dni', 'dhi', 'lag', 'roll'])]
+        critical_cols = [c for c in df.columns if any(x in c for x in ["pv", "ghi", "dni", "dhi", "lag", "roll"])]
         df = df.dropna(subset=critical_cols)
 
     df = df.copy()

@@ -7,15 +7,15 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from joblib import dump
 from sklearn.preprocessing import StandardScaler
-import tensorflow as tf
 
 from pv_forecasting.data import save_history
-from pv_forecasting.pipeline import load_and_engineer_features, persist_processed
-from pv_forecasting.window import make_windows, chronological_split
+from pv_forecasting.metrics import mase, rmse
 from pv_forecasting.model import build_cnn_bilstm
-from pv_forecasting.metrics import rmse, mase
+from pv_forecasting.pipeline import load_and_engineer_features, persist_processed
+from pv_forecasting.window import chronological_split, make_windows
 
 
 def set_seed(seed: int = 42):
@@ -26,14 +26,18 @@ def set_seed(seed: int = 42):
 
 def parse_args():
     ap = argparse.ArgumentParser(description="24h-ahead PV Forecasting")
-    ap.add_argument("--processed-path", type=str, default="outputs/processed.parquet",
-                    help="path to pre-processed parquet file (preferred)")
+    ap.add_argument(
+        "--processed-path",
+        type=str,
+        default="outputs/processed.parquet",
+        help="path to pre-processed parquet file (preferred)",
+    )
     ap.add_argument("--pv-path", type=str, default="data/raw/pv_dataset.xlsx")
     ap.add_argument("--wx-path", type=str, default="data/raw/wx_dataset.xlsx")
     ap.add_argument("--local-tz", type=str, default="Australia/Sydney")
     ap.add_argument("--seq-len", type=int, default=168)
     ap.add_argument("--horizon", type=int, default=24)
-    ap.add_argument("--epochs", type=int, default=100)
+    ap.add_argument("--epochs", type=int, default=200)
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--outdir", type=str, default="outputs_cnn")
     return ap.parse_args()
@@ -72,10 +76,14 @@ def main():
     target_series = df["pv"]
 
     # Window first on unscaled to compute MASE denominator later on the training target series
-    X_raw, Y_raw, origins = make_windows(df[[*feature_cols, "pv"]], target_col="pv", seq_len=args.seq_len, horizon=args.horizon)
+    X_raw, Y_raw, origins = make_windows(
+        df[[*feature_cols, "pv"]], target_col="pv", seq_len=args.seq_len, horizon=args.horizon
+    )
 
     # Chronological split indexes
-    (Xtr_raw, Ytr, origins_tr), (Xval_raw, Yval, origins_val), (Xte_raw, Yte, origins_te) = chronological_split(X_raw, Y_raw, np.array(origins))
+    (Xtr_raw, Ytr, origins_tr), (Xval_raw, Yval, origins_val), (Xte_raw, Yte, origins_te) = chronological_split(
+        X_raw, Y_raw, np.array(origins)
+    )
 
     # Fit scaler on train portion features only
     # Recover the aligned feature frames for the train window span
@@ -103,23 +111,10 @@ def main():
     # Build and train model
     model = build_cnn_bilstm(input_shape=(args.seq_len, n_features), horizon=args.horizon)
     callbacks = [
-        tf.keras.callbacks.EarlyStopping(
-            patience=15,
-            restore_best_weights=True,
-            monitor="val_loss",
-            verbose=1
-        ),
-        tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss",
-            factor=0.5,
-            patience=5,
-            min_lr=1e-6,
-            verbose=1
-        ),
+        tf.keras.callbacks.EarlyStopping(patience=15, restore_best_weights=True, monitor="val_loss", verbose=1),
+        tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6, verbose=1),
         tf.keras.callbacks.ModelCheckpoint(
-            filepath=str(out_dir / "model_best.keras"),
-            save_best_only=True,
-            monitor="val_loss"
+            filepath=str(out_dir / "model_best.keras"), save_best_only=True, monitor="val_loss"
         ),
     ]
 
@@ -131,7 +126,8 @@ def main():
     print(f"Batch size: {args.batch_size}")
     print()
     history = model.fit(
-        Xtr, Ytr,
+        Xtr,
+        Ytr,
         validation_data=(Xval, Yval),
         epochs=args.epochs,
         batch_size=args.batch_size,
@@ -163,12 +159,14 @@ def main():
     mase_model = mase(y_true_flat, y_pred_flat, train_series=train_series, m=24)
     mase_naive = mase(y_true_flat, y_naive_flat, train_series=train_series, m=24)
 
-    print({
-        "rmse_model": rmse_model,
-        "rmse_naive": rmse_naive,
-        "mase_model": mase_model,
-        "mase_naive": mase_naive,
-    })
+    print(
+        {
+            "rmse_model": rmse_model,
+            "rmse_naive": rmse_naive,
+            "mase_model": mase_model,
+            "mase_naive": mase_naive,
+        }
+    )
 
     # Export predictions (long format)
     rows = []
@@ -176,13 +174,15 @@ def main():
         origin = pd.Timestamp(origins_te[i]).tz_convert("UTC")
         base_ts = origin + pd.Timedelta(hours=1)
         for h in range(args.horizon):
-            rows.append({
-                "origin_timestamp_utc": origin.isoformat(),
-                "forecast_timestamp_utc": (base_ts + pd.Timedelta(hours=h)).isoformat(),
-                "horizon_h": h + 1,
-                "y_true": float(Yte[i, h]),
-                "y_pred": float(Yhat[i, h]),
-            })
+            rows.append(
+                {
+                    "origin_timestamp_utc": origin.isoformat(),
+                    "forecast_timestamp_utc": (base_ts + pd.Timedelta(hours=h)).isoformat(),
+                    "horizon_h": h + 1,
+                    "y_true": float(Yte[i, h]),
+                    "y_pred": float(Yhat[i, h]),
+                }
+            )
     pred_df = pd.DataFrame(rows)
     pred_df.to_csv(out_dir / "predictions_test_cnn.csv", index=False)
 

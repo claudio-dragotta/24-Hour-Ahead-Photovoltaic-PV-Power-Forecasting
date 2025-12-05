@@ -23,8 +23,8 @@ Output:
 This file can be used by all training scripts with --processed-path argument.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -34,9 +34,9 @@ from pv_forecasting.pipeline import load_and_engineer_features, persist_processe
 
 def main():
     """Main preprocessing function."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("PV FORECASTING - DATA PREPROCESSING")
-    print("="*70)
+    print("=" * 70)
 
     # Configuration
     raw_pv_path = Path("data/raw/pv_dataset.xlsx")
@@ -59,10 +59,10 @@ def main():
         wx_path=raw_wx_path,
         local_tz=local_timezone,
         lag_hours=(1, 24, 168),  # 1h, 1day, 1week lags
-        rolling_hours=(3, 6),    # 3h and 6h rolling averages
-        include_solar=True,      # Add solar position angles
-        include_clearsky=True,   # Add clear-sky irradiance + kc
-        dropna=True,             # Drop rows with NaN in critical columns
+        rolling_hours=(3, 6),  # 3h and 6h rolling averages
+        include_solar=True,  # Add solar position angles
+        include_clearsky=True,  # Add clear-sky irradiance + kc
+        dropna=True,  # Drop rows with NaN in critical columns
     )
 
     print(f"✓ Processed {len(df)} samples with {len(df.columns)} features")
@@ -77,8 +77,7 @@ def main():
     print(f"Total days: {len(df) / 24:.1f}")
     print(f"\nFeatures ({len(df.columns)}):")
     for i, col in enumerate(df.columns, 1):
-        print(f"  {i:2d}. {col:25s} (dtype: {df[col].dtype}, "
-              f"NaN: {df[col].isna().sum()}/{len(df)})")
+        print(f"  {i:2d}. {col:25s} (dtype: {df[col].dtype}, " f"NaN: {df[col].isna().sum()}/{len(df)})")
 
     # Check weather_description encoding
     print(f"\n{'='*70}")
@@ -90,7 +89,7 @@ def main():
         print(f"  Data type: {df['weather_description'].dtype}")
         print(f"  Unique values: {sorted(df['weather_description'].unique())}")
         print(f"  Value distribution:")
-        print(df['weather_description'].value_counts().sort_index().to_string())
+        print(df["weather_description"].value_counts().sort_index().to_string())
         print(f"\n  Encoding scheme:")
         print(f"    10.0 = clear/sunny (max PV production)")
         print(f"     8.0 = few clouds")
@@ -113,8 +112,7 @@ def main():
         print(f"  Data type: {df['kc'].dtype}")
         print(f"  Range: [{df['kc'].min():.2f}, {df['kc'].max():.2f}]")
         print(f"  Mean: {df['kc'].mean():.2f}")
-        print(f"  NaN count: {df['kc'].isna().sum()} "
-              f"({100*df['kc'].isna().sum()/len(df):.1f}%)")
+        print(f"  NaN count: {df['kc'].isna().sum()} " f"({100*df['kc'].isna().sum()/len(df):.1f}%)")
         print(f"\n  kc = measured_GHI / clearsky_GHI:")
         print(f"    1.0 = perfect clear sky")
         print(f"    0.5 = 50% blocked by clouds")
