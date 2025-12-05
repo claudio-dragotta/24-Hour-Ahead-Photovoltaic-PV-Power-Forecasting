@@ -1,0 +1,178 @@
+[
+  {
+    "feature": "doy_cos",
+    "importance": 1201.0
+  },
+  {
+    "feature": "clouds",
+    "importance": 995.875
+  },
+  {
+    "feature": "pressure",
+    "importance": 992.75
+  },
+  {
+    "feature": "doy_sin",
+    "importance": 915.4166666666666
+  },
+  {
+    "feature": "sp_azimuth",
+    "importance": 901.6666666666666
+  },
+  {
+    "feature": "wind_deg",
+    "importance": 858.625
+  },
+  {
+    "feature": "dew_point",
+    "importance": 757.3333333333334
+  },
+  {
+    "feature": "rain_1h",
+    "importance": 745.2916666666666
+  },
+  {
+    "feature": "temp",
+    "importance": 721.4583333333334
+  },
+  {
+    "feature": "time_idx",
+    "importance": 659.0833333333334
+  },
+  {
+    "feature": "wind_speed",
+    "importance": 630.5833333333334
+  },
+  {
+    "feature": "humidity",
+    "importance": 574.7916666666666
+  },
+  {
+    "feature": "sp_zenith",
+    "importance": 483.3333333333333
+  },
+  {
+    "feature": "pv",
+    "importance": 450.0
+  },
+  {
+    "feature": "hour_sin",
+    "importance": 415.7916666666667
+  },
+  {
+    "feature": "dni_roll6h",
+    "importance": 293.0833333333333
+  },
+  {
+    "feature": "ghi_roll6h",
+    "importance": 245.58333333333334
+  },
+  {
+    "feature": "pv_roll6h",
+    "importance": 232.0
+  },
+  {
+    "feature": "dni_lag24",
+    "importance": 219.875
+  },
+  {
+    "feature": "pv_lag24",
+    "importance": 215.83333333333334
+  },
+  {
+    "feature": "pv_lag168",
+    "importance": 214.5
+  },
+  {
+    "feature": "hour_cos",
+    "importance": 212.25
+  },
+  {
+    "feature": "ghi_lag24",
+    "importance": 196.20833333333334
+  },
+  {
+    "feature": "dni_lag168",
+    "importance": 185.625
+  },
+  {
+    "feature": "dhi_lag168",
+    "importance": 183.83333333333334
+  },
+  {
+    "feature": "ghi_lag168",
+    "importance": 181.79166666666666
+  },
+  {
+    "feature": "dhi",
+    "importance": 181.125
+  },
+  {
+    "feature": "dhi_lag24",
+    "importance": 179.04166666666666
+  },
+  {
+    "feature": "dhi_lag1",
+    "importance": 174.25
+  },
+  {
+    "feature": "weather_description",
+    "importance": 167.625
+  },
+  {
+    "feature": "kc",
+    "importance": 153.04166666666666
+  },
+  {
+    "feature": "pv_roll3h",
+    "importance": 152.79166666666666
+  },
+  {
+    "feature": "dni_roll3h",
+    "importance": 127.16666666666667
+  },
+  {
+    "feature": "pv_lag1",
+    "importance": 125.95833333333333
+  },
+  {
+    "feature": "ghi_roll3h",
+    "importance": 120.20833333333333
+  },
+  {
+    "feature": "dni",
+    "importance": 118.83333333333333
+  },
+  {
+    "feature": "cs_dni",
+    "importance": 109.79166666666667
+  },
+  {
+    "feature": "cs_dhi",
+    "importance": 103.16666666666667
+  },
+  {
+    "feature": "dni_lag1",
+    "importance": 98.08333333333333
+  },
+  {
+    "feature": "ghi_lag1",
+    "importance": 98.04166666666667
+  },
+  {
+    "feature": "ghi",
+    "importance": 97.41666666666667
+  },
+  {
+    "feature": "cs_ghi",
+    "importance": 83.83333333333333
+  },
+  {
+    "feature": "lat",
+    "importance": 0.0
+  },
+  {
+    "feature": "lon",
+    "importance": 0.0
+  }
+]
