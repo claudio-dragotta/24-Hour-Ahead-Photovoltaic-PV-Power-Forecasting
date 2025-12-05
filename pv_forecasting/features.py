@@ -7,9 +7,10 @@ timezone-aware DatetimeIndex.
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 import pandas as pd
-from typing import Optional
 
 try:
     import pvlib
@@ -455,31 +456,33 @@ def encode_weather_description(df: pd.DataFrame, col: str = "weather_description
 
     # Priority encoding: most specific first
     # Clear sky conditions → Maximum PV production
-    clear_mask = weather.str.contains('clear|sunny', case=False, na=False)
+    clear_mask = weather.str.contains("clear|sunny", case=False, na=False)
     encoded[clear_mask] = 10.0
 
     # Few clouds → High PV production
-    few_clouds_mask = weather.str.contains('few cloud|partly', case=False, na=False)
+    few_clouds_mask = weather.str.contains("few cloud|partly", case=False, na=False)
     encoded[few_clouds_mask] = 8.0
 
     # Scattered clouds → Medium-high PV production
-    scattered_mask = weather.str.contains('scatter|mostly cloud', case=False, na=False)
+    scattered_mask = weather.str.contains("scatter|mostly cloud", case=False, na=False)
     encoded[scattered_mask] = 6.0
 
     # Overcast / broken clouds → Medium-low PV production
-    overcast_mask = weather.str.contains('overcast|broken|cloud', case=False, na=False) & ~(clear_mask | few_clouds_mask | scattered_mask)
+    overcast_mask = weather.str.contains("overcast|broken|cloud", case=False, na=False) & ~(
+        clear_mask | few_clouds_mask | scattered_mask
+    )
     encoded[overcast_mask] = 4.0
 
     # Heavy rain / storm → Minimal PV production
-    heavy_rain_mask = weather.str.contains('heavy|thunderstorm|storm|snow', case=False, na=False)
+    heavy_rain_mask = weather.str.contains("heavy|thunderstorm|storm|snow", case=False, na=False)
     encoded[heavy_rain_mask] = 1.0
 
     # Light rain / drizzle → Very low PV production
-    rain_mask = weather.str.contains('rain|drizzle', case=False, na=False) & ~heavy_rain_mask
+    rain_mask = weather.str.contains("rain|drizzle", case=False, na=False) & ~heavy_rain_mask
     encoded[rain_mask] = 2.0
 
     # Fog / mist → Very low PV production (blocks sun)
-    fog_mask = weather.str.contains('fog|mist|haze', case=False, na=False)
+    fog_mask = weather.str.contains("fog|mist|haze", case=False, na=False)
     encoded[fog_mask] = 0.0
 
     # Handle NaN / missing values

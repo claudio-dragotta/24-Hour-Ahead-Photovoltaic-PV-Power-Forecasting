@@ -1,6 +1,6 @@
 # 24-Hour Ahead Photovoltaic (PV) Power Forecasting
 
-[![CI](https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/workflows/CI/badge.svg)](https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/actions)
+[![CI](https://github.com/claudio-dragotta/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/workflows/CI/badge.svg)](https://github.com/claudio-dragotta/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/actions)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -49,6 +49,39 @@ This project follows professional software engineering best practices:
 - **Structured Logging**: Professional logging framework for debugging and monitoring
 - **Versioning**: Semantic versioning with `__version__` attribute
 
+### Experimental Setup: 6-Model Ensemble Strategy
+
+This project implements a **comprehensive comparison framework** to identify optimal feature configurations:
+
+**Two Feature Configurations:**
+
+- **Baseline** (45 features): Standard lags (1h, 24h, 168h)
+- **Lag72** (49 features): **Enhanced with 3-day lag** (1h, 24h, **72h**, 168h)
+  - Rationale: Weather patterns persist 2-4 days → knowing conditions 3 days ago improves forecasts
+
+**Three Model Architectures:**
+
+- **LightGBM**: Fast tree-based gradient boosting (24 independent horizon models)
+- **CNN-BiLSTM**: Deep learning with Conv1D + bidirectional LSTM (sequence-to-sequence)
+- **TFT** (Temporal Fusion Transformer): State-of-the-art attention-based forecasting
+
+#### Total: 6 Models = 3 architectures × 2 feature sets
+
+**Ensemble Strategy:**
+
+1. Train all 6 models independently
+2. Compare baseline vs lag72 for each architecture
+3. Optimize ensemble weights using grid search or Optuna
+4. Create final ensemble from best-performing models (weighted by validation performance)
+
+**Key Benefits:**
+
+- Identifies impact of 3-day lag features per model type
+- Diversifies predictions across architectures (tree-based + deep learning)
+- Leverages strengths: LightGBM excels at short horizons (h=1-12), CNN/TFT at long horizons (h=13-24)
+
+See [EXPERIMENTS.md](EXPERIMENTS.md) for detailed comparison plan and [METRICS_ANALYSIS.md](METRICS_ANALYSIS.md) for performance benchmarks.
+
 ---
 
 ## Table of Contents
@@ -80,6 +113,434 @@ This project follows professional software engineering best practices:
     - [New Training Modes](#new-training-modes)
     - [Validation and Anti‑Leakage Policy](#validation-and-anti-leakage-policy)
     - [Deliverables and Reproducibility](#deliverables-and-reproducibility)
+
+---
+
+## Complete Pipeline: From Raw Data to Production
+
+This section provides a comprehensive overview of the entire workflow, from raw data to production-ready predictions. Follow these steps sequentially to reproduce the complete system.
+
+### Pipeline Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    RAW DATA (Excel files)                       │
+│              pv_dataset.xlsx + wx_dataset.xlsx                  │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                         ▼
+          ┌──────────────────────────────┐
+          │  STEP 1: PREPROCESSING       │
+          │  Feature Engineering         │
+          │  - Lag features (1h, 24h,    │
+          │    72h, 168h)                │
+          │  - Rolling statistics        │
+          │  - Time features             │
+          └──────────┬───────────────────┘
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+        ▼                         ▼
+outputs_baseline/          outputs_lag72/
+processed.parquet          processed.parquet
+(45 features)              (49 features: +lag72)
+        │                         │
+        └────────┬────────────────┘
+                 │
+                 ▼
+    ┌────────────────────────────┐
+    │  STEP 2: TRAIN 6 MODELS    │
+    │  3 architectures ×         │
+    │  2 feature configs         │
+    │                            │
+    │  LightGBM-Baseline         │
+    │  LightGBM-Lag72           │
+    │  CNN-BiLSTM-Baseline      │
+    │  CNN-BiLSTM-Lag72         │
+    │  TFT-Baseline              │
+    │  TFT-Lag72                 │
+    └────────┬───────────────────┘
+             │
+             │ Each model produces:
+             │ - predictions_val_*.csv (validation: 20%)
+             │ - predictions_test_*.csv (test: 20%)
+             │
+             ▼
+    ┌────────────────────────────┐
+    │  STEP 3: ENSEMBLE          │
+    │  OPTIMIZATION              │
+    │  (on VALIDATION set)       │
+    │                            │
+    │  Exhaustive search:        │
+    │  - Tests 57 combinations   │
+    │  - Optimizes weights       │
+    │  - Selects best ensemble   │
+    └────────┬───────────────────┘
+             │
+             │ Outputs:
+             │ - ensemble_weights.json
+             │   {models: [...], weights: [...]}
+             │
+             ▼
+    ┌────────────────────────────┐
+    │  STEP 4: TEST EVALUATION   │
+    │  (on TEST set)             │
+    │                            │
+    │  Apply optimized weights   │
+    │  to never-seen test data   │
+    │                            │
+    │  → HONEST METRICS          │
+    │    (report these!)         │
+    └────────┬───────────────────┘
+             │
+             ▼
+    ┌────────────────────────────┐
+    │  STEP 5: PRODUCTION        │
+    │  INFERENCE                 │
+    │                            │
+    │  Use EnsembleModel to      │
+    │  predict on new data       │
+    │  (professor's dataset)     │
+    │                            │
+    │  Input: meteo data (t)     │
+    │  Output: 24h forecast      │
+    └────────────────────────────┘
+```
+
+### Data Split Strategy (Critical)
+
+```
+Total Dataset: 17,374 hours
+│
+├─ TRAIN SET (60% = 10,410 hours)
+│  Purpose: Train all 6 models
+│  Used by: train_lgbm.py, train_cnn_bilstm.py, train_tft.py
+│
+├─ VALIDATION SET (20% = 3,470 hours)
+│  Purpose: Optimize ensemble weights
+│  Used by: ensemble.py (finds best combination + weights)
+│  IMPORTANT: Never use this for final evaluation.
+│
+└─ TEST SET (20% = 3,494 hours)
+   Purpose: Honest performance evaluation
+   Used by: test_ensemble.py (final metrics)
+   CRITICAL: This data is NEVER seen during training/optimization.
+
+   → Test metrics = Expected performance on new data
+   → These are the numbers you report in your thesis or paper.
+```
+
+**Why this split?**
+- If we optimize ensemble on test set → **overfitting** → metrics too optimistic
+- Using separate validation → test set truly held-out → **honest evaluation**
+
+---
+
+### Step-by-Step Instructions
+
+#### STEP 1: Preprocessing (Generate Both Datasets)
+
+Generate two versions of processed data: baseline and lag72.
+
+**1a. Baseline features (45 features):**
+```bash
+# Already done! File exists at:
+# outputs_baseline/processed.parquet
+```
+
+**1b. Lag72 features (49 features: +3-day lag):**
+```bash
+python scripts/preprocessing/generate_processed_lag72.py
+# Output: outputs_lag72/processed.parquet
+```
+
+**What happens:**
+
+- Loads raw Excel files (`pv_dataset.xlsx`, `wx_dataset.xlsx`)
+- Merges PV + weather data by timestamp
+- Creates lag features: 1h, 24h, (72h), 168h ago
+- Creates rolling statistics (3h, 6h windows)
+- Adds time features (hour, month, day_of_year)
+- Splits into train/validation/test (60/20/20)
+
+---
+
+#### STEP 2: Train All 6 Models
+
+Train each model on both feature configurations.
+
+**2a. LightGBM Baseline (DONE ✓):**
+```bash
+# Already trained! Results in outputs_baseline/lgbm/
+```
+
+**2b. CNN-BiLSTM Baseline:**
+```bash
+source .venv/bin/activate
+bash scripts/training/train_cnn_baseline.sh
+
+# Or directly:
+python scripts/training/train_cnn_bilstm.py \
+  --processed-path outputs_baseline/processed.parquet \
+  --outdir outputs_baseline/cnn \
+  --epochs 200 \
+  --batch-size 64
+```
+
+**Training time:** ~280 minutes (~4 hours 40 minutes) - 28 epochs × ~10 min/epoch
+
+**Outputs:**
+
+- `outputs_baseline/cnn/model_best.keras` (best model)
+- `outputs_baseline/cnn/predictions_val_cnn.csv` (validation predictions)
+- `outputs_baseline/cnn/predictions_test_cnn.csv` (test predictions)
+- `outputs_baseline/cnn/metrics_val_cnn.json` (validation metrics)
+
+**2c. CNN-BiLSTM with Lag72:**
+```bash
+bash scripts/training/train_cnn_lag72.sh
+
+# Or:
+python scripts/training/train_cnn_bilstm.py \
+  --processed-path outputs_lag72/processed.parquet \
+  --outdir outputs_lag72/cnn
+```
+
+**Training time:** ~210 minutes (~3 hours 30 minutes) - 21 epochs × ~10 min/epoch
+
+**2d. TFT Baseline:**
+```bash
+python scripts/training/train_tft.py \
+  --processed-path outputs_baseline/processed.parquet \
+  --outdir outputs_baseline/tft
+```
+
+**2e. TFT with Lag72:**
+```bash
+python scripts/training/train_tft.py \
+  --processed-path outputs_lag72/processed.parquet \
+  --outdir outputs_lag72/tft
+```
+
+**2f. LightGBM with Lag72:**
+```bash
+python scripts/training/train_lgbm.py \
+  --processed-path outputs_lag72/processed.parquet \
+  --outdir outputs_lag72/lgbm
+```
+
+**After this step, you have:**
+
+- 6 trained models
+- 6 validation prediction files (`predictions_val_*.csv`)
+- 6 test prediction files (`predictions_test_*.csv`)
+
+---
+
+#### STEP 3: Ensemble Optimization (on Validation Set)
+
+Find the best combination of models and their optimal weights.
+
+```bash
+python scripts/evaluation/ensemble.py \
+  --lgbm-baseline outputs_baseline/lgbm/predictions_val_lgbm.csv \
+  --lgbm-lag72 outputs_lag72/lgbm/predictions_val_lgbm.csv \
+  --cnn-baseline outputs_baseline/cnn/predictions_val_cnn.csv \
+  --cnn-lag72 outputs_lag72/cnn/predictions_val_cnn.csv \
+  --tft-baseline outputs_baseline/tft/predictions_val_tft.csv \
+  --tft-lag72 outputs_lag72/tft/predictions_val_tft.csv \
+  --outdir outputs_ensemble \
+  --method exhaustive \
+  --metric rmse
+```
+
+**What this does:**
+
+1. **Loads** all 6 validation predictions
+2. **Tests** all 57 possible combinations:
+   - 15 pairs (2 models)
+   - 20 triplets (3 models)
+   - 15 quadruplets (4 models)
+   - 6 quintuplets (5 models)
+   - 1 sextet (all 6 models)
+3. **Optimizes** weights for each combination using grid search
+4. **Selects** the absolute best combination based on validation RMSE
+
+**Time:** ~10-30 minutes
+
+**Output: `outputs_ensemble/ensemble_weights.json`**
+```json
+{
+  "model_names": ["LightGBM-Baseline", "CNN-BiLSTM-Lag72", "TFT-Lag72"],
+  "weights": [0.40, 0.35, 0.25],
+  "optimization_method": "exhaustive",
+  "best_rmse": 6.720,
+  "timestamp": "2025-12-04T..."
+}
+```
+
+**Interpretation:**
+
+- Best ensemble uses 3 models (the algorithm selects between 2 and 6 models based on validation performance)
+- Each model has a weight (sum = 1.0)
+- Final prediction = weighted average of selected models
+
+---
+
+#### STEP 4: Test Evaluation (on Test Set)
+
+Apply the optimized weights to the test set for honest evaluation.
+
+```bash
+python scripts/evaluation/test_ensemble.py \
+  --weights outputs_ensemble/ensemble_weights.json \
+  --lgbm-baseline outputs_baseline/lgbm/predictions_test_lgbm.csv \
+  --lgbm-lag72 outputs_lag72/lgbm/predictions_test_lgbm.csv \
+  --cnn-baseline outputs_baseline/cnn/predictions_test_cnn.csv \
+  --cnn-lag72 outputs_lag72/cnn/predictions_test_cnn.csv \
+  --tft-baseline outputs_baseline/tft/predictions_test_tft.csv \
+  --tft-lag72 outputs_lag72/tft/predictions_test_tft.csv \
+  --outdir outputs_ensemble
+```
+
+**What this does:**
+
+1. Loads ensemble weights from Step 3
+2. Loads test predictions (never seen during optimization)
+3. Combines predictions using optimized weights
+4. Computes final metrics (RMSE, MASE, MAE) per horizon
+
+**Output:**
+```
+TEST SET EVALUATION RESULTS
+============================================================
+Overall Performance:
+  RMSE: 6.850 kW
+  MASE: 0.850
+  MAE:  5.420 kW
+
+Per-Horizon Performance:
+  h= 1: RMSE=3.52, MASE=0.36
+  h= 6: RMSE=5.12, MASE=0.65
+  h=12: RMSE=6.45, MASE=0.82
+  h=18: RMSE=7.89, MASE=0.98
+  h=24: RMSE=8.07, MASE=1.02
+============================================================
+```
+
+**Note:** These test set metrics represent expected performance on unseen data and should be reported in the thesis or paper as the final performance evaluation.
+
+---
+
+#### STEP 5: Production Inference (Professor's Dataset)
+
+Use the optimized ensemble to make predictions on completely new data.
+
+**Option A: Using EnsembleModel (Recommended)**
+
+```python
+from pv_forecasting.ensemble_model import EnsembleModel
+import pandas as pd
+
+# Load ensemble (automatically loads all 6 models + weights)
+ensemble = EnsembleModel.from_outputs(
+    ensemble_dir="outputs_ensemble",
+    baseline_dir="outputs_baseline",
+    lag72_dir="outputs_lag72"
+)
+
+# Load professor's data (already preprocessed)
+prof_data = pd.read_parquet("prof_processed_data.parquet")
+
+# Make predictions
+predictions = ensemble.predict(prof_data)
+# Shape: (N_samples, 24) - 24-hour forecasts
+
+# Save results
+output_df = pd.DataFrame(
+    predictions,
+    columns=[f"h{i}" for i in range(1, 25)]
+)
+output_df.to_csv("predictions_prof/forecast_24h.csv", index=False)
+```
+
+**Option B: Using Command-Line Script**
+
+```bash
+python scripts/inference/predict.py \
+  --input-pv prof_pv_data.xlsx \
+  --input-wx prof_wx_data.xlsx \
+  --ensemble-weights outputs_ensemble/ensemble_weights.json \
+  --outdir predictions_prof
+```
+
+**Output format:**
+```csv
+timestamp,forecast_hour,predicted_power_kW
+2025-12-05 00:00:00,1,5.23
+2025-12-05 01:00:00,2,4.87
+2025-12-05 02:00:00,3,3.12
+...
+2025-12-05 23:00:00,24,12.45
+```
+
+**Interpretation:**
+- Input: Current weather conditions + recent PV production
+- Output: Predicted PV power for next 24 hours
+- Use for: Grid management, energy trading, dispatch planning
+
+---
+
+### Quick Command Reference
+
+After training all 6 models, run these commands in sequence:
+
+```bash
+# 1. Optimize ensemble (validation set)
+python scripts/evaluation/ensemble.py \
+  --lgbm-baseline outputs_baseline/lgbm/predictions_val_lgbm.csv \
+  --lgbm-lag72 outputs_lag72/lgbm/predictions_val_lgbm.csv \
+  --cnn-baseline outputs_baseline/cnn/predictions_val_cnn.csv \
+  --cnn-lag72 outputs_lag72/cnn/predictions_val_cnn.csv \
+  --tft-baseline outputs_baseline/tft/predictions_val_tft.csv \
+  --tft-lag72 outputs_lag72/tft/predictions_val_tft.csv \
+  --method exhaustive \
+  --outdir outputs_ensemble
+
+# 2. Test ensemble (test set - final evaluation metrics)
+python scripts/evaluation/test_ensemble.py \
+  --weights outputs_ensemble/ensemble_weights.json \
+  --lgbm-baseline outputs_baseline/lgbm/predictions_test_lgbm.csv \
+  --lgbm-lag72 outputs_lag72/lgbm/predictions_test_lgbm.csv \
+  --cnn-baseline outputs_baseline/cnn/predictions_test_cnn.csv \
+  --cnn-lag72 outputs_lag72/cnn/predictions_test_cnn.csv \
+  --tft-baseline outputs_baseline/tft/predictions_test_tft.csv \
+  --tft-lag72 outputs_lag72/tft/predictions_test_tft.csv \
+  --outdir outputs_ensemble
+
+# 3. Production inference (new data)
+python -c "
+from pv_forecasting.ensemble_model import EnsembleModel
+ensemble = EnsembleModel.from_outputs('outputs_ensemble')
+# predictions = ensemble.predict(your_data)
+"
+```
+
+---
+
+### Key Takeaways
+
+1. **Two feature sets** (baseline vs lag72) → Test if 3-day lag helps
+2. **Three architectures** (LightGBM, CNN-BiLSTM, TFT) → Diversification
+3. **Ensemble combines best models** → Better than any single model
+4. **Validation for optimization** → Find best combination/weights
+5. **Test for evaluation** → Honest performance estimate (report these metrics)
+6. **EnsembleModel for production** → Simple unified interface
+
+**For detailed documentation, see:**
+- [WORKFLOW.md](WORKFLOW.md) - Complete step-by-step guide
+- [EXPERIMENTS.md](EXPERIMENTS.md) - Experimental design & tracking
+- [METRICS_ANALYSIS.md](METRICS_ANALYSIS.md) - Performance benchmarks
 
 ---
 
@@ -125,20 +586,39 @@ This project follows professional software engineering best practices:
 │   ├── README.md                  # Scripts documentation
 │   ├── data/                      # Data processing
 │   │   └── preprocess_data.py     # Complete preprocessing pipeline
+│   ├── preprocessing/             # Advanced preprocessing
+│   │   └── generate_processed_lag72.py  # Generate dataset with 3-day lag features
 │   ├── training/                  # Model training
 │   │   ├── README.md              # Training guide
 │   │   ├── train_lgbm.py          # LightGBM multi-horizon training
 │   │   ├── train_tft.py           # TFT training
-│   │   └── train_cnn_bilstm.py    # CNN-BiLSTM training
+│   │   ├── train_cnn_bilstm.py    # CNN-BiLSTM training
+│   │   ├── train_cnn_baseline.sh  # Helper: CNN with baseline features
+│   │   └── train_cnn_lag72.sh     # Helper: CNN with 3-day lag features
 │   ├── inference/                 # Prediction/deployment
 │   │   └── predict.py             # Inference script
 │   └── evaluation/                # Model evaluation
-│       └── ensemble.py            # Ensemble optimization
+│       └── ensemble.py            # Ensemble optimization (flexible 2-6 models)
 │
-├── outputs/                       # Model outputs (generated)
-├── outputs_lgbm/                  # LightGBM outputs (generated)
-├── outputs_tft/                   # TFT outputs (generated)
-└── outputs_ensemble/              # Ensemble outputs (generated)
+├── outputs_baseline/              # Baseline experiments (45 features: lag1, lag24, lag168)
+│   ├── processed.parquet          # Processed dataset (1.9MB)
+│   ├── lgbm/                      # LightGBM baseline results
+│   ├── cnn/                       # CNN-BiLSTM baseline results
+│   └── tft/                       # TFT baseline results
+│
+├── outputs_lag72/                 # Lag72 experiments (49 features: +lag72 3-day features)
+│   ├── processed.parquet          # Processed dataset with lag72 (2.0MB)
+│   ├── lgbm/                      # LightGBM with lag72 results
+│   ├── cnn/                       # CNN-BiLSTM with lag72 results
+│   └── tft/                       # TFT with lag72 results
+│
+├── outputs_ensemble/              # Final ensemble results (6 models)
+│   ├── ensemble_weights.json      # Optimized model weights
+│   ├── predictions_val_ensemble.csv
+│   └── metrics_ensemble.json
+│
+├── METRICS_ANALYSIS.md            # Performance analysis & benchmarks
+└── EXPERIMENTS.md                 # Experiment tracking & comparison
 ```
 
 ---
@@ -544,16 +1024,102 @@ python scripts/training/train_lgbm.py --outdir outputs_lgbm
 python scripts/training/train_tft.py --outdir outputs_tft --use-future-meteo   # se hai NWP/meteo future
 ```
 
-### Ensemble e Inference
+### Ensemble: Combining Multiple Models
 
-- Valida il peso dell'ensemble:
-  ```bash
-  python scripts/ensemble.py --tft-preds outputs_tft/predictions_val_tft.csv --lgbm-preds outputs_lgbm/predictions_val_lgbm.csv
-  ```
-- Previsione day-ahead (auto-switch con/senza meteo future se forniti):
-  ```bash
-  python scripts/inference/predict.py --pv-path data/raw/pv_dataset.xlsx --wx-path data/raw/wx_dataset.xlsx --future-wx-path <opzionale>
-  ```
+The project supports flexible ensemble optimization for 2-6 models:
+
+#### Example: 2-Model Ensemble (TFT + LightGBM)
+
+```bash
+python scripts/evaluation/ensemble.py \
+  --tft outputs_tft/predictions_val_tft.csv \
+  --lgbm outputs_lgbm/predictions_val_lgbm.csv \
+  --outdir outputs_ensemble \
+  --method grid \
+  --metric rmse
+```
+
+#### Example: 3-Model Ensemble (All Baseline Models)
+
+```bash
+python scripts/evaluation/ensemble.py \
+  --tft outputs_baseline/tft/predictions_val_tft.csv \
+  --lgbm outputs_baseline/lgbm/predictions_val_lgbm.csv \
+  --bilstm outputs_baseline/cnn/predictions_val_cnn.csv \
+  --outdir outputs_ensemble \
+  --method optuna \
+  --optuna-trials 200 \
+  --metric rmse
+```
+
+#### Example: 6-Model Grand Ensemble with Exhaustive Search (RECOMMENDED)
+
+**BEST APPROACH:** Let the algorithm try ALL possible combinations (2-6 models) and find the optimal ensemble:
+
+```bash
+python scripts/evaluation/ensemble.py \
+  --lgbm-baseline outputs_baseline/lgbm/predictions_val_lgbm.csv \
+  --lgbm-lag72 outputs_lag72/lgbm/predictions_val_lgbm.csv \
+  --cnn-baseline outputs_baseline/cnn/predictions_val_cnn.csv \
+  --cnn-lag72 outputs_lag72/cnn/predictions_val_cnn.csv \
+  --tft-baseline outputs_baseline/tft/predictions_val_tft.csv \
+  --tft-lag72 outputs_lag72/tft/predictions_val_tft.csv \
+  --outdir outputs_ensemble \
+  --method exhaustive \
+  --metric rmse
+```
+
+This will:
+- Test all 57 possible combinations (15 pairs + 20 triplets + 15 quads + 6 quints + 1 sextet)
+- For each combination, optimize weights using grid search
+- Automatically select the best-performing subset
+- **Guarantees optimal solution** (may take longer: ~10-30 minutes for 6 models)
+
+**Alternative:** Force using all 6 models with Optuna optimization
+
+```bash
+python scripts/evaluation/ensemble.py \
+  --lgbm-baseline outputs_baseline/lgbm/predictions_val_lgbm.csv \
+  --lgbm-lag72 outputs_lag72/lgbm/predictions_val_lgbm.csv \
+  --cnn-baseline outputs_baseline/cnn/predictions_val_cnn.csv \
+  --cnn-lag72 outputs_lag72/cnn/predictions_val_cnn.csv \
+  --tft-baseline outputs_baseline/tft/predictions_val_tft.csv \
+  --tft-lag72 outputs_lag72/tft/predictions_val_tft.csv \
+  --outdir outputs_ensemble \
+  --method optuna \
+  --optuna-trials 200 \
+  --metric rmse
+```
+
+**Optional: Subset of models** (example with 3 best performers)
+
+```bash
+# After comparing individual model metrics, select top 3
+python scripts/evaluation/ensemble.py \
+  --lgbm-baseline outputs_baseline/lgbm/predictions_val_lgbm.csv \
+  --cnn-lag72 outputs_lag72/cnn/predictions_val_cnn.csv \
+  --tft-lag72 outputs_lag72/tft/predictions_val_tft.csv \
+  --outdir outputs_ensemble \
+  --method grid \
+  --metric rmse
+```
+
+**Outputs:**
+
+- `ensemble_weights.json`: Optimized weights for each model
+- `predictions_val_ensemble.csv`: Blended predictions
+- `metrics_ensemble.json`: Performance comparison (individual vs ensemble)
+
+### Inference
+
+Previsione day-ahead (auto-switch con/senza meteo future se forniti):
+
+```bash
+python scripts/inference/predict.py \
+  --pv-path data/raw/pv_dataset.xlsx \
+  --wx-path data/raw/wx_dataset.xlsx \
+  --future-wx-path <opzionale>
+```
 
 ### Data Preparation
 
@@ -699,4 +1265,4 @@ Notes:
 **Author**: Claudio Dragotta
 **Date**: November 2025
 **Institution**: Deep Learning Course - Magistrale  
-**Repository**: [24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting](https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting)
+**Repository**: [24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting](https://github.com/claudio-dragotta/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting)

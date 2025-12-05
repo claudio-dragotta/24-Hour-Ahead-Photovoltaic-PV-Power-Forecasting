@@ -6,24 +6,24 @@ supporting both scenarios with and without future meteorological data.
 
 from __future__ import annotations
 
-import json
 import argparse
+import json
 from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
 import pandas as pd
 import torch
-from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 from pytorch_forecasting import TimeSeriesDataSet
 from pytorch_forecasting.data.encoders import GroupNormalizer
 from pytorch_forecasting.metrics import QuantileLoss
 from pytorch_forecasting.models import TemporalFusionTransformer
+from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 
+from pv_forecasting.logger import get_logger
 from pv_forecasting.metrics import mase, rmse
 from pv_forecasting.pipeline import load_and_engineer_features, persist_processed
-from pv_forecasting.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -35,42 +35,35 @@ def parse_args() -> argparse.Namespace:
         Parsed arguments namespace.
     """
     ap = argparse.ArgumentParser(description="train tft (pytorch forecasting) for 24h-ahead pv forecasting")
-    ap.add_argument("--processed-path", type=str, default="outputs/processed.parquet",
-                    help="path to pre-processed parquet file (preferred)")
-    ap.add_argument("--pv-path", type=str, default="data/raw/pv_dataset.xlsx",
-                    help="fallback: path to PV dataset xlsx")
-    ap.add_argument("--wx-path", type=str, default="data/raw/wx_dataset.xlsx",
-                    help="fallback: path to weather dataset xlsx")
-    ap.add_argument("--local-tz", type=str, default="Australia/Sydney",
-                    help="local timezone for data")
-    ap.add_argument("--seq-len", type=int, default=168,
-                    help="encoder length in hours (default: 168 = 7 days)")
-    ap.add_argument("--horizon", type=int, default=24,
-                    help="prediction horizon in hours")
-    ap.add_argument("--epochs", type=int, default=100,
-                    help="maximum training epochs")
-    ap.add_argument("--batch-size", type=int, default=64,
-                    help="training batch size")
-    ap.add_argument("--hidden-size", type=int, default=64,
-                    help="TFT hidden size")
-    ap.add_argument("--attention-heads", type=int, default=4,
-                    help="number of attention heads")
-    ap.add_argument("--dropout", type=float, default=0.2,
-                    help="dropout rate")
-    ap.add_argument("--learning-rate", type=float, default=1e-3,
-                    help="initial learning rate")
-    ap.add_argument("--outdir", type=str, default="outputs_tft",
-                    help="output directory for checkpoints and predictions")
-    ap.add_argument("--use-future-meteo", action="store_true",
-                    help="use future weather covariates if available (NWP mode)")
-    ap.add_argument("--train-ratio", type=float, default=0.6,
-                    help="training set ratio (chronological split)")
-    ap.add_argument("--val-ratio", type=float, default=0.2,
-                    help="validation set ratio (chronological split)")
-    ap.add_argument("--test-ratio", type=float, default=0.2,
-                    help="test set ratio (chronological split)")
-    ap.add_argument("--seed", type=int, default=42,
-                    help="random seed for reproducibility")
+    ap.add_argument(
+        "--processed-path",
+        type=str,
+        default="outputs/processed.parquet",
+        help="path to pre-processed parquet file (preferred)",
+    )
+    ap.add_argument("--pv-path", type=str, default="data/raw/pv_dataset.xlsx", help="fallback: path to PV dataset xlsx")
+    ap.add_argument(
+        "--wx-path", type=str, default="data/raw/wx_dataset.xlsx", help="fallback: path to weather dataset xlsx"
+    )
+    ap.add_argument("--local-tz", type=str, default="Australia/Sydney", help="local timezone for data")
+    ap.add_argument("--seq-len", type=int, default=168, help="encoder length in hours (default: 168 = 7 days)")
+    ap.add_argument("--horizon", type=int, default=24, help="prediction horizon in hours")
+    ap.add_argument("--epochs", type=int, default=100, help="maximum training epochs")
+    ap.add_argument("--batch-size", type=int, default=64, help="training batch size")
+    ap.add_argument("--hidden-size", type=int, default=64, help="TFT hidden size")
+    ap.add_argument("--attention-heads", type=int, default=4, help="number of attention heads")
+    ap.add_argument("--dropout", type=float, default=0.2, help="dropout rate")
+    ap.add_argument("--learning-rate", type=float, default=1e-3, help="initial learning rate")
+    ap.add_argument(
+        "--outdir", type=str, default="outputs_tft", help="output directory for checkpoints and predictions"
+    )
+    ap.add_argument(
+        "--use-future-meteo", action="store_true", help="use future weather covariates if available (NWP mode)"
+    )
+    ap.add_argument("--train-ratio", type=float, default=0.6, help="training set ratio (chronological split)")
+    ap.add_argument("--val-ratio", type=float, default=0.2, help="validation set ratio (chronological split)")
+    ap.add_argument("--test-ratio", type=float, default=0.2, help="test set ratio (chronological split)")
+    ap.add_argument("--seed", type=int, default=42, help="random seed for reproducibility")
     return ap.parse_args()
 
 
@@ -92,11 +85,7 @@ def main() -> None:
         logger.info(f"loaded {len(df)} samples with {len(df.columns)} features from cache")
     else:
         logger.info(f"processed parquet not found, loading and engineering features from raw data")
-        df = load_and_engineer_features(
-            Path(args.pv_path),
-            Path(args.wx_path),
-            args.local_tz
-        )
+        df = load_and_engineer_features(Path(args.pv_path), Path(args.wx_path), args.local_tz)
         persist_processed(df, Path("outputs"))
         logger.info(f"saved processed data to outputs/processed.parquet")
 
@@ -105,22 +94,27 @@ def main() -> None:
 
     # Known future covariates: time features, solar position, clear-sky estimates
     known_future = [
-        c for c in [
-            "hour_sin", "hour_cos",
-            "doy_sin", "doy_cos",
-            "sp_zenith", "sp_azimuth",
-            "cs_ghi", "cs_dni", "cs_dhi",
-        ] if c in df.columns
-    ]
-
-    raw_meteo = [
-        c for c in ["ghi", "dni", "dhi", "temp", "humidity", "clouds", "wind_speed"]
+        c
+        for c in [
+            "hour_sin",
+            "hour_cos",
+            "doy_sin",
+            "doy_cos",
+            "sp_zenith",
+            "sp_azimuth",
+            "cs_ghi",
+            "cs_dni",
+            "cs_dhi",
+        ]
         if c in df.columns
     ]
 
+    raw_meteo = [c for c in ["ghi", "dni", "dhi", "temp", "humidity", "clouds", "wind_speed"] if c in df.columns]
+
     # Past unknown covariates: lags, rolling features, clearness index
     past_unknown = [
-        c for c in df.columns
+        c
+        for c in df.columns
         if c.startswith(("pv_lag", "ghi_lag", "dni_lag", "dhi_lag"))
         or c.endswith(("roll3h", "roll6h", "roll12h", "roll24h"))
         or c == "kc"
@@ -174,16 +168,13 @@ def main() -> None:
         training,
         df[(df["time_idx"] > cutoff_train) & (df["time_idx"] <= cutoff_val)],
         predict=False,
-        stop_randomization=True
+        stop_randomization=True,
     )
 
     # Test dataset (for final evaluation - NEVER seen during training!)
     logger.info("creating test dataset...")
     test_dataset = TimeSeriesDataSet.from_dataset(
-        training,
-        df[df["time_idx"] > cutoff_val],
-        predict=False,
-        stop_randomization=True
+        training, df[df["time_idx"] > cutoff_val], predict=False, stop_randomization=True
     )
 
     train_loader = training.to_dataloader(train=True, batch_size=args.batch_size, num_workers=0)
@@ -205,19 +196,15 @@ def main() -> None:
         optimizer="adam",
         reduce_on_plateau_patience=3,
     )
-    logger.info(f"model config: hidden={args.hidden_size}, heads={args.attention_heads}, "
-                f"dropout={args.dropout}, lr={args.learning_rate}")
+    logger.info(
+        f"model config: hidden={args.hidden_size}, heads={args.attention_heads}, "
+        f"dropout={args.dropout}, lr={args.learning_rate}"
+    )
 
     # Training callbacks
     callbacks = [
         EarlyStopping(monitor="val_loss", patience=8, mode="min", verbose=True),
-        ModelCheckpoint(
-            dirpath=str(out_dir),
-            filename="tft-best",
-            monitor="val_loss",
-            save_top_k=1,
-            mode="min"
-        ),
+        ModelCheckpoint(dirpath=str(out_dir), filename="tft-best", monitor="val_loss", save_top_k=1, mode="min"),
         LearningRateMonitor(logging_interval="epoch"),
     ]
 
@@ -255,13 +242,8 @@ def main() -> None:
     decoder_target = x["decoder_target"].detach().cpu().numpy()
 
     # Build timestamp lookup and naive baseline
-    time_lookup: Dict[int, pd.Timestamp] = {
-        int(ti): ts for ti, ts in zip(df["time_idx"].astype(int), df.index)
-    }
-    naive_map = {
-        h: df["pv"].shift(24 - h).reset_index(drop=True)
-        for h in range(1, args.horizon + 1)
-    }
+    time_lookup: Dict[int, pd.Timestamp] = {int(ti): ts for ti, ts in zip(df["time_idx"].astype(int), df.index)}
+    naive_map = {h: df["pv"].shift(24 - h).reset_index(drop=True) for h in range(1, args.horizon + 1)}
     train_series = df.loc[df["time_idx"] <= cutoff_train, "pv"].values
 
     # Export predictions in long format with timestamps
@@ -277,21 +259,19 @@ def main() -> None:
             y_true = float(decoder_target[i, h_idx])
             y_pred = float(preds_np[i, h_idx])
             naive_series = naive_map[horizon_h]
-            naive_val = (
-                float(naive_series.iloc[forecast_ti])
-                if forecast_ti < len(naive_series)
-                else np.nan
-            )
+            naive_val = float(naive_series.iloc[forecast_ti]) if forecast_ti < len(naive_series) else np.nan
 
-            rows.append({
-                "time_idx": forecast_ti,
-                "origin_timestamp_utc": origin_ts.isoformat() if origin_ts is not None else None,
-                "forecast_timestamp_utc": forecast_ts.isoformat() if forecast_ts is not None else None,
-                "horizon_h": horizon_h,
-                "y_true": y_true,
-                "y_pred": y_pred,
-                "y_naive": naive_val,
-            })
+            rows.append(
+                {
+                    "time_idx": forecast_ti,
+                    "origin_timestamp_utc": origin_ts.isoformat() if origin_ts is not None else None,
+                    "forecast_timestamp_utc": forecast_ts.isoformat() if forecast_ts is not None else None,
+                    "horizon_h": horizon_h,
+                    "y_true": y_true,
+                    "y_pred": y_pred,
+                    "y_naive": naive_val,
+                }
+            )
 
     pred_df = pd.DataFrame(rows)
     pred_path = out_dir / "predictions_test_tft.csv"
@@ -314,13 +294,15 @@ def main() -> None:
         mase_model = mase(y_true, y_pred, train_series=train_series, m=24)
         mase_naive = mase(y_true, naive_valid, train_series=train_series, m=24)
 
-        metrics.append({
-            "horizon_h": h,
-            "rmse_model": float(rmse_model),
-            "rmse_naive": float(rmse_naive),
-            "mase_model": float(mase_model),
-            "mase_naive": float(mase_naive),
-        })
+        metrics.append(
+            {
+                "horizon_h": h,
+                "rmse_model": float(rmse_model),
+                "rmse_naive": float(rmse_naive),
+                "mase_model": float(mase_model),
+                "mase_naive": float(mase_naive),
+            }
+        )
 
     # Summary metrics
     metric_summary = {
@@ -337,8 +319,10 @@ def main() -> None:
     summary_path = out_dir / "metrics_summary.json"
     (out_dir / "metrics_summary.json").write_text(json.dumps(metric_summary, indent=2))
     logger.info(f"saved summary metrics to {summary_path}")
-    logger.info(f"average RMSE: {metric_summary['rmse_model_avg']:.4f}, "
-                f"average MASE: {metric_summary['mase_model_avg']:.4f}")
+    logger.info(
+        f"average RMSE: {metric_summary['rmse_model_avg']:.4f}, "
+        f"average MASE: {metric_summary['mase_model_avg']:.4f}"
+    )
 
     # Save training configuration
     cfg = {

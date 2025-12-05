@@ -10,17 +10,17 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from joblib import dump
 from sklearn.preprocessing import StandardScaler
-import tensorflow as tf
 
 from ..config import Config
 from ..data import save_history
-from ..pipeline import load_and_engineer_features, persist_processed
-from ..window import make_windows, chronological_split
-from ..models import build_cnn_bilstm
-from ..metrics import rmse, mase
 from ..logger import get_logger
+from ..metrics import mase, rmse
+from ..models import build_cnn_bilstm
+from ..pipeline import load_and_engineer_features, persist_processed
+from ..window import chronological_split, make_windows
 
 logger = get_logger(__name__)
 

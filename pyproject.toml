@@ -61,9 +61,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting"
-Repository = "https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting"
-Documentation = "https://github.com/Claude-debug/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting#readme"
+Homepage = "https://github.com/claudio-dragotta/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting"
+Repository = "https://github.com/claudio-dragotta/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting"
+Documentation = "https://github.com/claudio-dragotta/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting#readme"
 
 [project.scripts]
 pv-train = "pv_forecasting.cli:train"

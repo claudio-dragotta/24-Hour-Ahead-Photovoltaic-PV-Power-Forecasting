@@ -58,7 +58,9 @@ def add_supervised_targets(
     return data, feature_cols, targets
 
 
-def chronological_masks(time_idx: pd.Series, train_ratio: float, val_ratio: float) -> Tuple[pd.Series, pd.Series, pd.Series]:
+def chronological_masks(
+    time_idx: pd.Series, train_ratio: float, val_ratio: float
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
     """Split time_idx chronologically into train/val/test masks."""
     max_idx = time_idx.max()
     cutoff_train = int(max_idx * train_ratio)
@@ -85,7 +87,9 @@ def train_lightgbm_multi_horizon(
     - val: for early stopping
     - test: for final evaluation (never seen during training)
     """
-    train_mask, val_mask, test_mask = chronological_masks(data["time_idx"], train_ratio=train_ratio, val_ratio=val_ratio)
+    train_mask, val_mask, test_mask = chronological_masks(
+        data["time_idx"], train_ratio=train_ratio, val_ratio=val_ratio
+    )
     X_train = data.loc[train_mask, feature_cols]
     X_val = data.loc[val_mask, feature_cols]
     X_test = data.loc[test_mask, feature_cols]
@@ -244,6 +248,12 @@ def run_walk_forward(
 
 def parse_args():
     ap = argparse.ArgumentParser(description="Train LightGBM multi-horizon baseline for 24h PV forecasting")
+    ap.add_argument(
+        "--processed-path",
+        type=str,
+        default="outputs/processed.parquet",
+        help="path to pre-processed parquet file (preferred)",
+    )
     ap.add_argument("--pv-path", type=str, default="data/raw/pv_dataset.xlsx")
     ap.add_argument("--wx-path", type=str, default="data/raw/wx_dataset.xlsx")
     ap.add_argument("--local-tz", type=str, default="Australia/Sydney")
@@ -281,9 +291,9 @@ def main():
     rolling_hours = parse_int_list(args.rolling_hours, default=(3, 6))
 
     print("Loading and engineering features...")
-    
+
     # Check if processed data already exists
-    processed_path = Path("outputs/processed.parquet")
+    processed_path = Path(args.processed_path)
     if processed_path.exists():
         print(f"Loading pre-processed data from {processed_path}...")
         df = pd.read_parquet(processed_path)

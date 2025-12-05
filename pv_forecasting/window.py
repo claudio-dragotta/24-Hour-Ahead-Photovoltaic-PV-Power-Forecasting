@@ -190,4 +190,3 @@ def chronological_split(
         (X[idx_val], Y[idx_val], origins[idx_val]),
         (X[idx_test], Y[idx_test], origins[idx_test]),
     )
-
