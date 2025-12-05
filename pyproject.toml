@@ -42,7 +42,7 @@ dependencies = [
     "lightgbm>=4.3",
     "optuna>=3.6",
     "torch>=2.2",
-    "pytorch-lightning>=2.4",
+    "pytorch-lightning>=2.0,<2.1",
     "pytorch-forecasting>=1.0.0",
     "pyyaml>=6.0",
 ]
