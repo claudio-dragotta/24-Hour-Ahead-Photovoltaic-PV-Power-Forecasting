@@ -11,6 +11,10 @@ import tensorflow as tf
 from joblib import dump
 from sklearn.preprocessing import StandardScaler
 
+# Enable mixed precision training for 2-3x faster GPU computation
+policy = tf.keras.mixed_precision.Policy('mixed_float16')
+tf.keras.mixed_precision.set_global_policy(policy)
+
 from pv_forecasting.data import save_history
 from pv_forecasting.metrics import mase, rmse
 from pv_forecasting.model import build_cnn_bilstm
@@ -60,8 +64,8 @@ def parse_args():
     ap.add_argument("--local-tz", type=str, default="Australia/Sydney")
     ap.add_argument("--seq-len", type=int, default=168)
     ap.add_argument("--horizon", type=int, default=24)
-    ap.add_argument("--epochs", type=int, default=200)
-    ap.add_argument("--batch-size", type=int, default=64)
+    ap.add_argument("--epochs", type=int, default=100)
+    ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--outdir", type=str, default="outputs_cnn")
     ap.add_argument(
         "--use-future-meteo",
@@ -205,7 +209,7 @@ def main():
     model = build_cnn_bilstm(input_shape=(args.seq_len, n_features), horizon=args.horizon)
     callbacks = [
         tf.keras.callbacks.EarlyStopping(patience=15, restore_best_weights=True, monitor="val_loss", verbose=1),
-        tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6, verbose=1),
+        tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.7, patience=3, min_lr=1e-5, verbose=1),
         tf.keras.callbacks.ModelCheckpoint(
             filepath=str(out_dir / "model_best.keras"), save_best_only=True, monitor="val_loss"
         ),

@@ -1,0 +1,43 @@
+# Temporal Fusion Transformer - OPTIMIZED Configuration
+# Anti-overfitting settings based on observed train/val gap
+
+data:
+  pv_path: "data/raw/pv_dataset.xlsx"
+  wx_path: "data/raw/wx_dataset.xlsx"
+  processed_path: "outputs/processed.parquet"
+  local_tz: "Australia/Sydney"
+  processed_dir: "data/processed"
+  lag_hours: [1, 24, 168]
+  rolling_hours: [3, 6, 12, 24]
+  include_solar: true
+  include_clearsky: true
+  dropna: true
+
+model:
+  model_type: "tft"
+  horizon: 24
+  seq_len: 168
+  epochs: 100
+  batch_size: 64
+  learning_rate: 0.0001       # RIDOTTO: 3e-4 -> 1e-4 per training più stabile
+  val_ratio: 0.2
+  seed: 42
+  use_future_meteo: true
+
+# TFT hyperparameters OTTIMIZZATI per ridurre overfitting
+tft:
+  hidden_size: 32             # RIDOTTO: 64 -> 32 (meno parametri = meno overfitting)
+  lstm_layers: 1              # RIDOTTO: 2 -> 1 (modello più semplice)
+  attention_heads: 2          # RIDOTTO: 4 -> 2 (meno complessità)
+  dropout: 0.4                # AUMENTATO: 0.3 -> 0.4 (più regolarizzazione)
+  hidden_continuous_size: 16  # RIDOTTO: 32 -> 16
+  reduce_on_plateau_patience: 5  # AUMENTATO: 3 -> 5 (più pazienza per LR)
+  early_stopping_patience: 10    # Manteniamo 10 epoche
+  quantiles: [0.1, 0.5, 0.9]
+
+output:
+  output_dir: "outputs_tft"
+  save_predictions: true
+  save_model: true
+  save_metrics: true
+  log_level: "INFO"

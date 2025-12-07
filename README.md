@@ -87,11 +87,45 @@ See [EXPERIMENTS.md](EXPERIMENTS.md) for detailed comparison plan and [METRICS_A
 
 ---
 
+## Baseline Model Results
+
+**Training Configuration:**
+- Data: 17,350 training samples with solar-weighted sample weighting
+- Features: 189 features (45 base + 144 future meteo features for h=1-24)
+- Validation/Test split: 20% each, chronological (no shuffle)
+- Metrics: RMSE and MAE on test set
+
+### Completed Baselines
+
+| Model | Architecture | Epochs | Best Val Loss | Test RMSE | Test MAE | Status |
+|-------|--------------|--------|---------------|-----------|----------|--------|
+| **TFT** | Temporal Fusion Transformer | 29 (early stop) | 3.549 | 3.7060 | 2.3254 | ✅ Completed |
+| **CNN-BiLSTM** | 3-layer CNN (64→128→256) + BiLSTM(128) | 49 (early stop) | 18.8721 | 3.7267 | 2.3294 | ✅ Completed |
+
+### Key Observations
+
+1. **TFT vs CNN Performance**: Both models achieve nearly identical test RMSE (~3.71), demonstrating that well-tuned deep learning architectures can match attention-based models.
+
+2. **Optimization Impact**: 
+   - TFT: Reduced from 613K→176K parameters with optimized hyperparameters (hidden=32, heads=2, dropout=0.4, lr=1e-4)
+   - CNN: Increased from 240K→597K parameters with deeper architecture, mixed precision training, and aggressive learning rate scheduling (lr=1e-3 with ReduceLROnPlateau)
+
+3. **Training Efficiency**:
+   - TFT: ~8 min/epoch, 29 epochs = 3.8 hours total
+   - CNN: First epoch 3-5 min (XLA compilation), subsequent epochs 3-4 min each, 49 epochs = ~2.5 hours total
+
+4. **Regularization Strategy**: Both models use solar-weighted sample training to prioritize daytime predictions where PV generation matters most.
+
+**Next Steps**: Complete LightGBM baseline and build ensemble from all three architectures.
+
+---
+
 ## Table of Contents
 
 1. [Introduction](#introduction)
    - [Key Features](#key-features)
    - [Dataset Overview](#dataset-overview)
+   - [Baseline Model Results](#baseline-model-results)
 2. [Project Structure](#project-structure)
 3. [Data Description](#data-description)
 4. [Dataset Merging Strategy](#dataset-merging-strategy)
