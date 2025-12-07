@@ -18,8 +18,8 @@ from pytorch_forecasting import TimeSeriesDataSet
 from pytorch_forecasting.data.encoders import GroupNormalizer
 from pytorch_forecasting.metrics import QuantileLoss
 from pytorch_forecasting.models import TemporalFusionTransformer
-from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from lightning.pytorch import Trainer, seed_everything
+from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 
 from pv_forecasting.logger import get_logger
 from pv_forecasting.metrics import mase, rmse
@@ -73,10 +73,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--horizon", type=int, default=24, help="prediction horizon in hours")
     ap.add_argument("--epochs", type=int, default=100, help="maximum training epochs")
     ap.add_argument("--batch-size", type=int, default=64, help="training batch size")
-    ap.add_argument("--hidden-size", type=int, default=64, help="TFT hidden size")
-    ap.add_argument("--attention-heads", type=int, default=4, help="number of attention heads")
-    ap.add_argument("--dropout", type=float, default=0.2, help="dropout rate")
-    ap.add_argument("--learning-rate", type=float, default=1e-3, help="initial learning rate")
+    ap.add_argument("--hidden-size", type=int, default=32, help="TFT hidden size (reduced for regularization)")
+    ap.add_argument("--attention-heads", type=int, default=2, help="number of attention heads (reduced for regularization)")
+    ap.add_argument("--dropout", type=float, default=0.4, help="dropout rate (increased for regularization)")
+    ap.add_argument("--learning-rate", type=float, default=1e-4, help="initial learning rate (reduced for stability)")
     ap.add_argument(
         "--outdir", type=str, default="outputs_tft", help="output directory for checkpoints and predictions"
     )
@@ -278,17 +278,17 @@ def main() -> None:
 
     # Generate predictions on VALIDATION set (for ensemble weight optimization - no data leakage)
     logger.info("generating predictions on VALIDATION set (for ensemble)...")
-    val_preds, val_x = tft.predict(val_loader, return_x=True, mode="prediction")
-    val_preds_np = val_preds.detach().cpu().numpy()
-    val_decoder_time_idx = val_x["decoder_time_idx"].detach().cpu().numpy()
-    val_encoder_time_idx = val_x["encoder_time_idx"].detach().cpu().numpy()
-    val_decoder_target = val_x["decoder_target"].detach().cpu().numpy()
+    val_output = tft.predict(val_loader, return_x=True, mode="prediction")
+    val_preds_np = val_output.output.detach().cpu().numpy()
+    val_decoder_time_idx = val_output.x["decoder_time_idx"].detach().cpu().numpy()
+    val_decoder_target = val_output.x["decoder_target"].detach().cpu().numpy()
 
     val_rows = []
     for i in range(val_preds_np.shape[0]):
         for h_idx in range(val_preds_np.shape[1]):
             horizon_h = h_idx + 1
-            origin_ti = int(val_encoder_time_idx[i, -1])
+            # origin_ti is the last encoder timestep = first decoder timestep - 1
+            origin_ti = int(val_decoder_time_idx[i, 0]) - 1
             forecast_ti = int(val_decoder_time_idx[i, h_idx])
             origin_ts = time_lookup.get(origin_ti)
             forecast_ts = time_lookup.get(forecast_ti)
@@ -313,11 +313,10 @@ def main() -> None:
 
     # Generate predictions on TEST set (never seen during training or ensemble tuning!)
     logger.info("generating predictions on TEST set...")
-    preds, x = tft.predict(test_loader, return_x=True, mode="prediction")
-    preds_np = preds.detach().cpu().numpy()  # shape (N, horizon)
-    decoder_time_idx = x["decoder_time_idx"].detach().cpu().numpy()
-    encoder_time_idx = x["encoder_time_idx"].detach().cpu().numpy()
-    decoder_target = x["decoder_target"].detach().cpu().numpy()
+    test_output = tft.predict(test_loader, return_x=True, mode="prediction")
+    preds_np = test_output.output.detach().cpu().numpy()  # shape (N, horizon)
+    decoder_time_idx = test_output.x["decoder_time_idx"].detach().cpu().numpy()
+    decoder_target = test_output.x["decoder_target"].detach().cpu().numpy()
 
     # Build timestamp lookup and naive baseline
     time_lookup: Dict[int, pd.Timestamp] = {int(ti): ts for ti, ts in zip(df["time_idx"].astype(int), df.index)}
@@ -330,7 +329,8 @@ def main() -> None:
     for i in range(preds_np.shape[0]):
         for h_idx in range(preds_np.shape[1]):
             horizon_h = h_idx + 1
-            origin_ti = int(encoder_time_idx[i, -1])
+            # origin_ti is the last encoder timestep = first decoder timestep - 1
+            origin_ti = int(decoder_time_idx[i, 0]) - 1
             forecast_ti = int(decoder_time_idx[i, h_idx])
             origin_ts = time_lookup.get(origin_ti)
             forecast_ts = time_lookup.get(forecast_ti)

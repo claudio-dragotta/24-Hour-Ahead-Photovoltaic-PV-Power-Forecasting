@@ -127,28 +127,38 @@ def build_cnn_bilstm(input_shape: Tuple[int, int], horizon: int) -> keras.Model:
     """
     inp = keras.Input(shape=input_shape)
 
-    # CNN feature extraction with increased dropout
-    x = layers.Conv1D(32, kernel_size=5, padding="same", activation="relu")(inp)
-    x = layers.Dropout(0.2)(x)  # Add dropout after first conv
-    x = layers.Conv1D(64, kernel_size=3, padding="same", activation="relu")(x)
-    x = layers.Dropout(0.2)(x)  # Add dropout after second conv
+    # Deep CNN feature extraction (3 conv layers: 64 -> 128 -> 256 filters)
+    x = layers.Conv1D(64, kernel_size=5, padding="same", activation="relu", dtype="float16")(inp)
     x = layers.BatchNormalization()(x)
+    
+    x = layers.Conv1D(128, kernel_size=3, padding="same", activation="relu", dtype="float16")(x)
+    x = layers.BatchNormalization()(x)
+    
+    x = layers.Conv1D(256, kernel_size=3, padding="same", activation="relu", dtype="float16")(x)
+    x = layers.BatchNormalization()(x)
+    
+    # MaxPooling reduces temporal dim (168->84) for computational efficiency
+    x = layers.MaxPooling1D(pool_size=2)(x)
 
-    # Bidirectional LSTM with increased capacity and regularization
+    # Bidirectional LSTM (128 units) captures complex temporal patterns
     x = layers.Bidirectional(
         layers.LSTM(128, return_sequences=False, recurrent_dropout=0.1)
     )(x)
-    x = layers.Dropout(0.4)(x)  # Increased dropout before output
+    x = layers.Dropout(0.3)(x)
+    
+    # Additional dense layer for non-linear transformation
+    x = layers.Dense(64, activation="relu")(x)
+    x = layers.Dropout(0.3)(x)
 
-    # Output layer
-    out = layers.Dense(horizon)(x)
+    # Multi-horizon output (output layer always in float32 for numerical stability)
+    out = layers.Dense(horizon, activation="linear", dtype="float32")(x)
 
     model = keras.Model(inputs=inp, outputs=out)
 
     # Lower initial learning rate for better convergence
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=5e-4),
-        loss="mse"
+        optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+        loss="mse",
     )
     return model
 
