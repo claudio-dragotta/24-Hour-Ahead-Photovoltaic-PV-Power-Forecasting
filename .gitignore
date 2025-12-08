@@ -89,6 +89,10 @@ lightning_logs/
 tensorboard/
 wandb/
 
+# PyTorch Lightning checkpoints
+checkpoints/
+*.ckpt
+
 # Configuration (if contains secrets - keep templates)
 .env
 .env.local
