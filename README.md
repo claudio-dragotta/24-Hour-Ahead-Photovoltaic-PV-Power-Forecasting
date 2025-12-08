@@ -200,7 +200,7 @@ This section provides a comprehensive overview of the entire workflow, from raw 
                      ▼
           outputs/processed.parquet
       (feature set esteso di default)
-             (legacy: outputs_baseline/, outputs_lag72/)
+             (legacy: outputs/<model>/legacy_*)
                  │
                  ▼
     ┌────────────────────────────┐
@@ -212,7 +212,7 @@ This section provides a comprehensive overview of the entire workflow, from raw 
     │  TFT                       │
     │                            │
     │  (legacy: varianti         │
-    │   baseline/lag72)          │
+    │   legacy_* in outputs/*/)  │
     └────────┬───────────────────┘
              │
              │ Each model produces:
@@ -300,26 +300,21 @@ La pipeline crea `outputs/processed.parquet` con il set esteso di feature:
 - Rolling mean & variance: 3h, 6h, 12h, 24h
 - Time features, weekend/holiday flags, solar position, clear-sky, clearness index
 
-I training script (`train_cnn_bilstm.py`, `train_tft.py`, `train_lgbm.py`) rigenerano automaticamente il parquet se non esiste. Se vuoi confrontare con i vecchi esperimenti legacy (baseline/lag72), puoi ancora usare i file in `outputs_baseline/` e `outputs_lag72/`, ma il default è il set esteso sopra.
+I training script (`train_cnn_bilstm.py`, `train_tft.py`, `train_lgbm.py`) rigenerano automaticamente il parquet se non esiste. Se vuoi confrontare con i vecchi esperimenti legacy, usa le cartelle sotto `outputs/<model>/legacy_*` (es. `outputs/cnn/legacy_*`, `outputs/tft/legacy_*`); il default è il set esteso sopra.
 
 ---
 
 #### STEP 2: Train Models
 
-Per il flusso standard con le feature estese, lancia:
+Per il flusso standard con la struttura attuale:
 
 ```bash
-python scripts/training/train_lgbm.py --outdir outputs_lgbm
-python scripts/training/train_cnn_bilstm.py --outdir outputs_cnn
-python scripts/training/train_tft.py --outdir outputs_tft --use-future-meteo  # se hai NWP future
+python scripts/training/train_lgbm.py --outdir outputs/lgbm/baseline
+python scripts/training/train_cnn_bilstm.py --outdir outputs/cnn/baseline
+python scripts/training/train_tft.py --outdir outputs/tft/baseline --use-future-meteo  # se hai NWP future
 ```
 
-I comandi legacy sotto servono solo se vuoi replicare i vecchi esperimenti baseline/lag72 (opzionali).
-
-**2a. LightGBM Baseline (DONE):**
-```bash
-# Already trained! Results in outputs_baseline/lgbm/
-```
+I comandi legacy sotto servono solo se vuoi replicare i vecchi esperimenti (opzionali).
 
 **2b. CNN-BiLSTM Baseline:**
 ```bash
@@ -328,8 +323,8 @@ bash scripts/training/train_cnn_baseline.sh
 
 # Or directly:
 python scripts/training/train_cnn_bilstm.py \
-  --processed-path outputs_baseline/processed.parquet \
-  --outdir outputs_baseline/cnn \
+  --processed-path outputs/processed.parquet \
+  --outdir outputs/cnn/baseline \
   --epochs 200 \
   --batch-size 64
 ```
@@ -338,49 +333,23 @@ python scripts/training/train_cnn_bilstm.py \
 
 **Outputs:**
 
-- `outputs_baseline/cnn/model_best.keras` (best model)
-- `outputs_baseline/cnn/predictions_val_cnn.csv` (validation predictions)
-- `outputs_baseline/cnn/predictions_test_cnn.csv` (test predictions)
-- `outputs_baseline/cnn/metrics_val_cnn.json` (validation metrics)
+- `outputs/<model>/legacy_* (best model)
+- `outputs/<model>/legacy_* (validation predictions)
+- `outputs/<model>/legacy_* (test predictions)
+- `outputs/<model>/legacy_* (validation metrics)
 
-**2c. CNN-BiLSTM with Lag72:**
-```bash
-bash scripts/training/train_cnn_lag72.sh
-
-# Or:
-python scripts/training/train_cnn_bilstm.py \
-  --processed-path outputs_lag72/processed.parquet \
-  --outdir outputs_lag72/cnn
-```
-
-**Training time:** ~210 minutes (~3 hours 30 minutes) - 21 epochs × ~10 min/epoch
-
-**2d. TFT Baseline:**
+**2c. TFT Baseline:**
 ```bash
 python scripts/training/train_tft.py \
-  --processed-path outputs_baseline/processed.parquet \
-  --outdir outputs_baseline/tft
+  --processed-path outputs/processed.parquet \
+  --outdir outputs/tft/baseline
 ```
 
-**2e. TFT with Lag72:**
-```bash
-python scripts/training/train_tft.py \
-  --processed-path outputs_lag72/processed.parquet \
-  --outdir outputs_lag72/tft
-```
-
-**2f. LightGBM with Lag72:**
-```bash
-python scripts/training/train_lgbm.py \
-  --processed-path outputs_lag72/processed.parquet \
-  --outdir outputs_lag72/lgbm
-```
-
-**After this step, you have:**
-
-- 6 trained models
-- 6 validation prediction files (`predictions_val_*.csv`)
-- 6 test prediction files (`predictions_test_*.csv`)
+**Dove finiscono gli output (struttura attuale):**
+- `outputs/cnn/baseline` (CNN-BiLSTM)
+- `outputs/tft/baseline` (TFT)
+- `outputs/lgbm/baseline` (LightGBM)
+- Eventuali esperimenti legacy: `outputs/<model>/legacy_*`
 
 ---
 
@@ -390,12 +359,12 @@ Find the best combination of models and their optimal weights.
 
 ```bash
 python scripts/evaluation/ensemble.py \
-  --lgbm-baseline outputs_baseline/lgbm/predictions_val_lgbm.csv \
-  --lgbm-lag72 outputs_lag72/lgbm/predictions_val_lgbm.csv \
-  --cnn-baseline outputs_baseline/cnn/predictions_val_cnn.csv \
-  --cnn-lag72 outputs_lag72/cnn/predictions_val_cnn.csv \
-  --tft-baseline outputs_baseline/tft/predictions_val_tft.csv \
-  --tft-lag72 outputs_lag72/tft/predictions_val_tft.csv \
+  --lgbm-baseline outputs/<model>/legacy_* \
+  --lgbm-lag72 outputs/<model>/legacy_* \
+  --cnn-baseline outputs/<model>/legacy_* \
+  --cnn-lag72 outputs/<model>/legacy_* \
+  --tft-baseline outputs/<model>/legacy_* \
+  --tft-lag72 outputs/<model>/legacy_* \
   --outdir outputs_ensemble \
   --method exhaustive \
   --metric rmse
@@ -441,12 +410,12 @@ Apply the optimized weights to the test set for honest evaluation.
 ```bash
 python scripts/evaluation/test_ensemble.py \
   --weights outputs_ensemble/ensemble_weights.json \
-  --lgbm-baseline outputs_baseline/lgbm/predictions_test_lgbm.csv \
-  --lgbm-lag72 outputs_lag72/lgbm/predictions_test_lgbm.csv \
-  --cnn-baseline outputs_baseline/cnn/predictions_test_cnn.csv \
-  --cnn-lag72 outputs_lag72/cnn/predictions_test_cnn.csv \
-  --tft-baseline outputs_baseline/tft/predictions_test_tft.csv \
-  --tft-lag72 outputs_lag72/tft/predictions_test_tft.csv \
+  --lgbm-baseline outputs/<model>/legacy_* \
+  --lgbm-lag72 outputs/<model>/legacy_* \
+  --cnn-baseline outputs/<model>/legacy_* \
+  --cnn-lag72 outputs/<model>/legacy_* \
+  --tft-baseline outputs/<model>/legacy_* \
+  --tft-lag72 outputs/<model>/legacy_* \
   --outdir outputs_ensemble
 ```
 
@@ -492,8 +461,8 @@ import pandas as pd
 # Load ensemble (automatically loads all 6 models + weights)
 ensemble = EnsembleModel.from_outputs(
     ensemble_dir="outputs_ensemble",
-    baseline_dir="outputs_baseline",
-    lag72_dir="outputs_lag72"
+    baseline_dir="outputs/<model>/legacy_*
+    lag72_dir="outputs/<model>/legacy_*
 )
 
 # Load professor's data (already preprocessed)
@@ -545,24 +514,24 @@ After training all 6 models (legacy baseline/lag72 setup), run these commands in
 ```bash
 # 1. Optimize ensemble (validation set)
 python scripts/evaluation/ensemble.py \
-  --lgbm-baseline outputs_baseline/lgbm/predictions_val_lgbm.csv \
-  --lgbm-lag72 outputs_lag72/lgbm/predictions_val_lgbm.csv \
-  --cnn-baseline outputs_baseline/cnn/predictions_val_cnn.csv \
-  --cnn-lag72 outputs_lag72/cnn/predictions_val_cnn.csv \
-  --tft-baseline outputs_baseline/tft/predictions_val_tft.csv \
-  --tft-lag72 outputs_lag72/tft/predictions_val_tft.csv \
+  --lgbm-baseline outputs/<model>/legacy_* \
+  --lgbm-lag72 outputs/<model>/legacy_* \
+  --cnn-baseline outputs/<model>/legacy_* \
+  --cnn-lag72 outputs/<model>/legacy_* \
+  --tft-baseline outputs/<model>/legacy_* \
+  --tft-lag72 outputs/<model>/legacy_* \
   --method exhaustive \
   --outdir outputs_ensemble
 
 # 2. Test ensemble (test set - final evaluation metrics)
 python scripts/evaluation/test_ensemble.py \
   --weights outputs_ensemble/ensemble_weights.json \
-  --lgbm-baseline outputs_baseline/lgbm/predictions_test_lgbm.csv \
-  --lgbm-lag72 outputs_lag72/lgbm/predictions_test_lgbm.csv \
-  --cnn-baseline outputs_baseline/cnn/predictions_test_cnn.csv \
-  --cnn-lag72 outputs_lag72/cnn/predictions_test_cnn.csv \
-  --tft-baseline outputs_baseline/tft/predictions_test_tft.csv \
-  --tft-lag72 outputs_lag72/tft/predictions_test_tft.csv \
+  --lgbm-baseline outputs/<model>/legacy_* \
+  --lgbm-lag72 outputs/<model>/legacy_* \
+  --cnn-baseline outputs/<model>/legacy_* \
+  --cnn-lag72 outputs/<model>/legacy_* \
+  --tft-baseline outputs/<model>/legacy_* \
+  --tft-lag72 outputs/<model>/legacy_* \
   --outdir outputs_ensemble
 
 # 3. Production inference (new data)
@@ -648,13 +617,13 @@ ensemble = EnsembleModel.from_outputs('outputs_ensemble')
 │   └── evaluation/                # Model evaluation
 │       └── ensemble.py            # Ensemble optimization (flexible 2-6 models)
 │
-├── outputs_baseline/              # Baseline experiments (45 features: lag1, lag24, lag168)
+├── outputs/<model>/legacy_*              # Baseline experiments (45 features: lag1, lag24, lag168)
 │   ├── processed.parquet          # Processed dataset (1.9MB)
 │   ├── lgbm/                      # LightGBM baseline results
 │   ├── cnn/                       # CNN-BiLSTM baseline results
 │   └── tft/                       # TFT baseline results
 │
-├── outputs_lag72/                 # Lag72 experiments (49 features: +lag72 3-day features)
+├── outputs/<model>/legacy_*                 # Lag72 experiments (49 features: +lag72 3-day features)
 │   ├── processed.parquet          # Processed dataset with lag72 (2.0MB)
 │   ├── lgbm/                      # LightGBM with lag72 results
 │   ├── cnn/                       # CNN-BiLSTM with lag72 results
@@ -1094,9 +1063,9 @@ python scripts/evaluation/ensemble.py \
 
 ```bash
 python scripts/evaluation/ensemble.py \
-  --tft outputs_baseline/tft/predictions_val_tft.csv \
-  --lgbm outputs_baseline/lgbm/predictions_val_lgbm.csv \
-  --bilstm outputs_baseline/cnn/predictions_val_cnn.csv \
+  --tft outputs/<model>/legacy_* \
+  --lgbm outputs/<model>/legacy_* \
+  --bilstm outputs/<model>/legacy_* \
   --outdir outputs_ensemble \
   --method optuna \
   --optuna-trials 200 \
@@ -1109,12 +1078,12 @@ python scripts/evaluation/ensemble.py \
 
 ```bash
 python scripts/evaluation/ensemble.py \
-  --lgbm-baseline outputs_baseline/lgbm/predictions_val_lgbm.csv \
-  --lgbm-lag72 outputs_lag72/lgbm/predictions_val_lgbm.csv \
-  --cnn-baseline outputs_baseline/cnn/predictions_val_cnn.csv \
-  --cnn-lag72 outputs_lag72/cnn/predictions_val_cnn.csv \
-  --tft-baseline outputs_baseline/tft/predictions_val_tft.csv \
-  --tft-lag72 outputs_lag72/tft/predictions_val_tft.csv \
+  --lgbm-baseline outputs/<model>/legacy_* \
+  --lgbm-lag72 outputs/<model>/legacy_* \
+  --cnn-baseline outputs/<model>/legacy_* \
+  --cnn-lag72 outputs/<model>/legacy_* \
+  --tft-baseline outputs/<model>/legacy_* \
+  --tft-lag72 outputs/<model>/legacy_* \
   --outdir outputs_ensemble \
   --method exhaustive \
   --metric rmse
@@ -1130,12 +1099,12 @@ This will:
 
 ```bash
 python scripts/evaluation/ensemble.py \
-  --lgbm-baseline outputs_baseline/lgbm/predictions_val_lgbm.csv \
-  --lgbm-lag72 outputs_lag72/lgbm/predictions_val_lgbm.csv \
-  --cnn-baseline outputs_baseline/cnn/predictions_val_cnn.csv \
-  --cnn-lag72 outputs_lag72/cnn/predictions_val_cnn.csv \
-  --tft-baseline outputs_baseline/tft/predictions_val_tft.csv \
-  --tft-lag72 outputs_lag72/tft/predictions_val_tft.csv \
+  --lgbm-baseline outputs/<model>/legacy_* \
+  --lgbm-lag72 outputs/<model>/legacy_* \
+  --cnn-baseline outputs/<model>/legacy_* \
+  --cnn-lag72 outputs/<model>/legacy_* \
+  --tft-baseline outputs/<model>/legacy_* \
+  --tft-lag72 outputs/<model>/legacy_* \
   --outdir outputs_ensemble \
   --method optuna \
   --optuna-trials 200 \
@@ -1147,9 +1116,9 @@ python scripts/evaluation/ensemble.py \
 ```bash
 # After comparing individual model metrics, select top 3
 python scripts/evaluation/ensemble.py \
-  --lgbm-baseline outputs_baseline/lgbm/predictions_val_lgbm.csv \
-  --cnn-lag72 outputs_lag72/cnn/predictions_val_cnn.csv \
-  --tft-lag72 outputs_lag72/tft/predictions_val_tft.csv \
+  --lgbm-baseline outputs/<model>/legacy_* \
+  --cnn-lag72 outputs/<model>/legacy_* \
+  --tft-lag72 outputs/<model>/legacy_* \
   --outdir outputs_ensemble \
   --method grid \
   --metric rmse
@@ -1361,7 +1330,7 @@ Columns (14 total):
 
 #### Processed Data (Parquet Format)
 
-**`outputs_baseline/processed.parquet`** - 45 Features
+**`outputs/<model>/legacy_* - 45 Features
 ```
 Shape: (17,374 rows x 45 columns)
 Size: ~1.9 MB
@@ -1426,7 +1395,7 @@ METADATA (4):
   lon               float64   151.21        Longitude
 ```
 
-**`outputs_lag72/processed.parquet`** - 49 Features (+4 lag72)
+**`outputs/<model>/legacy_* - 49 Features (+4 lag72)
 ```
 Same as above PLUS:
 
@@ -1500,7 +1469,7 @@ predictions.shape = (n_samples, 24)
 
 **Files produced:**
 ```
-outputs_baseline/lgbm/
+outputs/<model>/legacy_*
 ├── models/
 │   ├── lgbm_h1.joblib      # Model for h=1 (1 hour ahead)
 │   ├── lgbm_h2.joblib      # Model for h=2
@@ -1552,7 +1521,7 @@ predictions.shape = (n_windows, 24)
 
 **Files produced:**
 ```
-outputs_baseline/cnn/
+outputs/<model>/legacy_*
 ├── model_best.keras        # Best model (lowest val loss)
 ├── scalers.joblib          # StandardScaler for features
 ├── history.json            # Training history (loss curves)
@@ -1573,7 +1542,7 @@ outputs_baseline/cnn/
 
 **Files produced:**
 ```
-outputs_baseline/tft/
+outputs/<model>/legacy_*
 ├── checkpoints/
 │   └── epoch=XX-step=YY.ckpt   # PyTorch Lightning checkpoint
 ├── predictions_val_tft.csv
@@ -1663,7 +1632,7 @@ outputs_ensemble/
 python scripts/data/preprocess_data.py \
   --pv-path data/raw/pv_dataset.xlsx \
   --wx-path data/raw/wx_dataset.xlsx \
-  --output-path outputs_baseline/processed.parquet
+  --output-path outputs/<model>/legacy_*
 
 # Generate lag72 processed data (49 features)
 python scripts/preprocessing/generate_processed_lag72.py
@@ -1674,22 +1643,22 @@ python scripts/preprocessing/generate_processed_lag72.py
 ```bash
 # LightGBM (fast, ~5 minutes)
 python scripts/training/train_lgbm.py \
-  --processed-path outputs_baseline/processed.parquet \
-  --outdir outputs_baseline/lgbm \
+  --processed-path outputs/<model>/legacy_* \
+  --outdir outputs/<model>/legacy_* \
   --use-future-meteo
 
 # CNN-BiLSTM (slow, ~3-4 hours on GPU)
 python scripts/training/train_cnn_bilstm.py \
-  --processed-path outputs_baseline/processed.parquet \
-  --outdir outputs_baseline/cnn \
+  --processed-path outputs/<model>/legacy_* \
+  --outdir outputs/<model>/legacy_* \
   --epochs 200 \
   --batch-size 64 \
   --use-future-meteo
 
 # TFT (medium, ~1-2 hours on GPU)
 python scripts/training/train_tft.py \
-  --processed-path outputs_baseline/processed.parquet \
-  --outdir outputs_baseline/tft \
+  --processed-path outputs/<model>/legacy_* \
+  --outdir outputs/<model>/legacy_* \
   --max-epochs 100 \
   --use-future-meteo
 ```
@@ -1698,12 +1667,12 @@ python scripts/training/train_tft.py \
 
 ```bash
 python scripts/evaluation/ensemble.py \
-  --lgbm-val outputs_baseline/lgbm/predictions_val_lgbm.csv \
-  --cnn-val outputs_baseline/cnn/predictions_val_cnn.csv \
-  --tft-val outputs_baseline/tft/predictions_val_tft.csv \
-  --lgbm-test outputs_baseline/lgbm/predictions_test_lgbm.csv \
-  --cnn-test outputs_baseline/cnn/predictions_test_cnn.csv \
-  --tft-test outputs_baseline/tft/predictions_test_tft.csv \
+  --lgbm-val outputs/<model>/legacy_* \
+  --cnn-val outputs/<model>/legacy_* \
+  --tft-val outputs/<model>/legacy_* \
+  --lgbm-test outputs/<model>/legacy_* \
+  --cnn-test outputs/<model>/legacy_* \
+  --tft-test outputs/<model>/legacy_* \
   --outdir outputs_ensemble \
   --method exhaustive \
   --metric rmse
@@ -1726,7 +1695,7 @@ python scripts/data/preprocess_data.py \
 python scripts/inference/predict.py \
   --processed-data professor_processed.parquet \
   --ensemble-weights outputs_ensemble/ensemble_weights.json \
-  --model-dir outputs_baseline \
+  --model-dir outputs/<model>/legacy_* \
   --outdir predictions_professor
 ```
 
@@ -1739,7 +1708,7 @@ from pv_forecasting.ensemble_model import EnsembleModel
 # Load trained ensemble
 ensemble = EnsembleModel.from_outputs(
     ensemble_dir="outputs_ensemble",
-    outputs_dir="outputs_baseline"
+    outputs_dir="outputs/<model>/legacy_*
 )
 
 # Load professor's data
