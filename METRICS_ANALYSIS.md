@@ -11,14 +11,14 @@
 ### 2. MASE (Mean Absolute Scaled Error)
 - **Formula**: `MAE(model) / MAE(naive_24h_persistence)`
 - **Interpretazione**:
-  - MASE < 1.0 = Meglio del baseline naive ✓
+  - MASE < 1.0 = Meglio del baseline naive (OK)
   - MASE = 1.0 = Uguale al baseline
-  - MASE > 1.0 = Peggio del baseline ✗ PROBLEMA!
+  - MASE > 1.0 = Peggio del baseline (PROBLEMA)
 - **Risultato LightGBM**: 0.87 (medio)
 
 ---
 
-## 🚨 PROBLEMA CRITICO IDENTIFICATO - LightGBM
+## PROBLEMA CRITICO IDENTIFICATO - LightGBM
 
 ### Performance per Orizzonte Temporale
 
@@ -29,7 +29,7 @@
 **Orizzonti Medi (8-17h): BUONO**
 - h=8-17: MASE=0.82-0.99
 
-**Orizzonti Lunghi (18-24h): PROBLEMATICO ✗**
+**Orizzonti Lunghi (18-24h): PROBLEMATICO**
 - **h=18: MASE=1.046** (peggio del naive!)
 - **h=20: MASE=1.030** (peggio del naive!)
 - **h=23: MASE=1.059** (peggio del naive!)

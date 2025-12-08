@@ -98,7 +98,7 @@ class EnsembleModel:
                     else:
                         raise FileNotFoundError(f"LightGBM model not found: {model_path}")
                 models[model_name] = lgbm_models
-                print(f"  ✓ {model_name}: 24 LightGBM models")
+                print(f"  {model_name}: 24 LightGBM models")
 
             elif "CNN-BiLSTM" in model_name or "CNN" in model_name:
                 # Load CNN-BiLSTM model and scaler
@@ -109,7 +109,7 @@ class EnsembleModel:
                     models[model_name] = tf.keras.models.load_model(model_path)
                     if scaler_path.exists():
                         scalers[model_name] = joblib.load(scaler_path)
-                    print(f"  ✓ {model_name}: CNN-BiLSTM + scaler")
+                    print(f"  {model_name}: CNN-BiLSTM + scaler")
                 else:
                     raise FileNotFoundError(f"CNN model not found: {model_path}")
 
@@ -120,12 +120,12 @@ class EnsembleModel:
                 if ckpt_files:
                     # TFT requires special loading - store path for now
                     models[model_name] = {"checkpoint_path": ckpt_files[0]}
-                    print(f"  ✓ {model_name}: TFT checkpoint found at {ckpt_files[0]}")
+                    print(f"  {model_name}: TFT checkpoint found at {ckpt_files[0]}")
                 else:
-                    print(f"  ⚠ {model_name}: TFT checkpoint not found in {tft_dir}")
+                    print(f"  WARNING: {model_name}: TFT checkpoint not found in {tft_dir}")
                     models[model_name] = None
             else:
-                print(f"  ⚠ Unknown model type: {model_name}")
+                print(f"  WARNING: Unknown model type: {model_name}")
                 models[model_name] = None
 
         return cls(models, model_weights, scalers)
@@ -171,7 +171,7 @@ class EnsembleModel:
                 # Reshape for CNN input (assuming windowing already done)
                 # predictions[model_name] = model.predict(X_scaled, verbose=0)
                 # TODO: Handle windowing for CNN properly
-                print(f"  ⚠ {model_name}: CNN prediction not fully implemented yet")
+                print(f"  WARNING: {model_name}: CNN prediction not fully implemented yet")
                 predictions[model_name] = np.zeros((len(X), 24))
 
         # Compute weighted ensemble

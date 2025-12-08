@@ -32,7 +32,7 @@ def main():
         rolling_hours=[3, 6],
     )
 
-    print(f"\n✓ Generated {len(df)} samples with {len(df.columns)} features")
+    print(f"\nGenerated {len(df)} samples with {len(df.columns)} features")
 
     # Check new lag72 features
     lag72_features = [col for col in df.columns if "lag72" in col]
@@ -45,7 +45,7 @@ def main():
     persist_processed(df, output_dir)
 
     print("\n" + "=" * 60)
-    print("✓ Done! New processed.parquet created with lag72 features")
+    print("Done! New processed.parquet created with lag72 features")
     print(f"Location: {output_dir / 'processed.parquet'}")
     print("=" * 60)
 

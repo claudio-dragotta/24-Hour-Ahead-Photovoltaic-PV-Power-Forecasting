@@ -99,8 +99,8 @@ See [EXPERIMENTS.md](EXPERIMENTS.md) for detailed comparison plan and [METRICS_A
 
 | Model | Architecture | Epochs | Best Val Loss | Test RMSE | Test MAE | Status |
 |-------|--------------|--------|---------------|-----------|----------|--------|
-| **TFT** | Temporal Fusion Transformer | 29 (early stop) | 3.549 | 3.7060 | 2.3254 | ✅ Completed |
-| **CNN-BiLSTM** | 3-layer CNN (64→128→256) + BiLSTM(128) | 49 (early stop) | 18.8721 | 3.7267 | 2.3294 | ✅ Completed |
+| **TFT** | Temporal Fusion Transformer | 29 (early stop) | 3.549 | 3.7060 | 2.3254 | Completed |
+| **CNN-BiLSTM** | 3-layer CNN (64→128→256) + BiLSTM(128) | 49 (early stop) | 18.8721 | 3.7267 | 2.3294 | Completed |
 
 ### Key Observations
 
@@ -296,7 +296,7 @@ python scripts/training/train_tft.py --outdir outputs_tft --use-future-meteo  # 
 
 I comandi legacy sotto servono solo se vuoi replicare i vecchi esperimenti baseline/lag72 (opzionali).
 
-**2a. LightGBM Baseline (DONE ✓):**
+**2a. LightGBM Baseline (DONE):**
 ```bash
 # Already trained! Results in outputs_baseline/lgbm/
 ```
