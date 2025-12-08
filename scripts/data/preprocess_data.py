@@ -65,7 +65,7 @@ def main():
         dropna=True,  # Drop rows with NaN in critical columns
     )
 
-    print(f"✓ Processed {len(df)} samples with {len(df.columns)} features")
+    print(f"Processed {len(df)} samples with {len(df.columns)} features")
 
     # Display dataset info
     print(f"\n{'='*70}")
@@ -85,7 +85,7 @@ def main():
     print(f"{'='*70}\n")
 
     if "weather_description" in df.columns:
-        print(f"✓ weather_description successfully encoded to numerical values")
+        print(f"weather_description successfully encoded to numerical values")
         print(f"  Data type: {df['weather_description'].dtype}")
         print(f"  Unique values: {sorted(df['weather_description'].unique())}")
         print(f"  Value distribution:")
@@ -100,7 +100,7 @@ def main():
         print(f"     0.0 = fog/mist")
         print(f"     5.0 = unknown/other")
     else:
-        print(f"⚠ WARNING: weather_description column not found in dataset")
+        print(f"WARNING: weather_description column not found in dataset")
 
     # Check clearness index (kc)
     print(f"\n{'='*70}")
@@ -108,7 +108,7 @@ def main():
     print(f"{'='*70}\n")
 
     if "kc" in df.columns:
-        print(f"✓ Clearness index (kc) successfully computed")
+        print(f"Clearness index (kc) successfully computed")
         print(f"  Data type: {df['kc'].dtype}")
         print(f"  Range: [{df['kc'].min():.2f}, {df['kc'].max():.2f}]")
         print(f"  Mean: {df['kc'].mean():.2f}")
@@ -118,7 +118,7 @@ def main():
         print(f"    0.5 = 50% blocked by clouds")
         print(f"    0.0 = nighttime or fully overcast")
     else:
-        print(f"⚠ WARNING: kc column not found in dataset")
+        print(f"WARNING: kc column not found in dataset")
 
     # Check for problematic columns
     print(f"\n{'='*70}")
@@ -131,17 +131,17 @@ def main():
         nan_pct = 100 * nan_count / len(df)
 
         if nan_pct > 50:
-            problems.append(f"  ✗ {col}: {nan_pct:.1f}% NaN (CRITICAL)")
+            problems.append(f"  {col}: {nan_pct:.1f}% NaN (CRITICAL)")
         elif nan_pct > 10:
-            print(f"  ⚠ {col}: {nan_pct:.1f}% NaN (expected for lag features)")
+            print(f"  WARNING: {col}: {nan_pct:.1f}% NaN (expected for lag features)")
 
     if problems:
         print("Found critical issues:")
         for p in problems:
             print(p)
-        print("\n⚠ WARNING: Dataset has problematic columns!")
+        print("\nWARNING: Dataset has problematic columns!")
     else:
-        print("✓ No critical data quality issues found")
+        print("No critical data quality issues found")
 
     # Save to parquet
     print(f"\n{'='*70}")
@@ -151,9 +151,9 @@ def main():
     output_path = persist_processed(df, output_dir)
     file_size_mb = output_path.stat().st_size / 1024 / 1024
 
-    print(f"✓ Saved to: {output_path}")
-    print(f"✓ File size: {file_size_mb:.2f} MB")
-    print(f"✓ Rows: {len(df)}, Columns: {len(df.columns)}")
+    print(f"Saved to: {output_path}")
+    print(f"File size: {file_size_mb:.2f} MB")
+    print(f"Rows: {len(df)}, Columns: {len(df.columns)}")
 
     # Final summary
     print(f"\n{'='*70}")

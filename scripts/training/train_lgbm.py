@@ -359,7 +359,7 @@ def main():
     if processed_path.exists():
         print(f"Loading pre-processed data from {processed_path}...")
         df = pd.read_parquet(processed_path)
-        print(f"✓ Loaded {len(df)} samples with {len(df.columns)} features from cache\n")
+        print(f"Loaded {len(df)} samples with {len(df.columns)} features from cache\n")
     else:
         print("Processing raw data...")
         df = load_and_engineer_features(
@@ -371,14 +371,14 @@ def main():
         )
         # Persist unified processed data for downstream scripts
         persist_processed(df, Path("outputs"))
-        print(f"✓ Loaded {len(df)} samples with {len(df.columns)} features\n")
+        print(f"Loaded {len(df)} samples with {len(df.columns)} features\n")
 
     print("Creating supervised targets...")
     future_cols = ["ghi", "dni", "dhi", "temp", "humidity", "clouds", "wind_speed"]
     data, feature_cols, targets = add_supervised_targets(
         df, horizon=args.horizon, use_future_meteo=args.use_future_meteo, future_cols=future_cols
     )
-    print(f"✓ Created {len(data)} training samples with {len(feature_cols)} features\n")
+    print(f"Created {len(data)} training samples with {len(feature_cols)} features\n")
 
     # Train + validate + test with 3-way chronological split
     models, val_preds_df, test_preds_df, metrics = train_lightgbm_multi_horizon(
@@ -438,7 +438,7 @@ def main():
     (out_dir / "feature_importance_lgbm.json").write_text(
         json.dumps([{"feature": f, "importance": float(imp)} for f, imp in feat_importance_sorted], indent=2)
     )
-    print(f"\n✓ Full feature importance saved to: feature_importance_lgbm.json\n")
+    print(f"\nFull feature importance saved to: feature_importance_lgbm.json\n")
 
     # Walk-forward evaluation (optional)
     wf_metrics: List[dict] = []
@@ -473,13 +473,13 @@ def main():
     print(f"\n{'='*60}")
     print(f"All Done! Results saved to: {out_dir}")
     print(f"{'='*60}")
-    print(f"✓ Models: {out_dir / 'models'} (24 files)")
-    print(f"✓ Predictions: {out_dir / 'predictions_test_lgbm.csv'}")
-    print(f"✓ Metrics: {out_dir / 'metrics_test_lgbm.json'}")
-    print(f"✓ Feature importance: {out_dir / 'feature_importance_lgbm.json'}")
+    print(f"Models: {out_dir / 'models'} (24 files)")
+    print(f"Predictions: {out_dir / 'predictions_test_lgbm.csv'}")
+    print(f"Metrics: {out_dir / 'metrics_test_lgbm.json'}")
+    print(f"Feature importance: {out_dir / 'feature_importance_lgbm.json'}")
     if args.walk_forward_folds > 0:
-        print(f"✓ Walk-forward metrics: {out_dir / 'metrics_walk_forward.json'}")
-    print(f"✓ Config: {out_dir / 'config_lgbm.json'}")
+        print(f"Walk-forward metrics: {out_dir / 'metrics_walk_forward.json'}")
+    print(f"Config: {out_dir / 'config_lgbm.json'}")
     print(f"{'='*60}\n")
 
 
