@@ -324,7 +324,7 @@ def parse_args():
     ap.add_argument("--horizon", type=int, default=24)
     ap.add_argument("--lag-hours", type=str, default="1,24,168")
     ap.add_argument("--rolling-hours", type=str, default="3,6")
-    ap.add_argument("--outdir", type=str, default="outputs_lgbm")
+    ap.add_argument("--outdir", type=str, default="outputs/lgbm/baseline")
     ap.add_argument("--train-ratio", type=float, default=0.6, help="Training set ratio (chronological split)")
     ap.add_argument("--val-ratio", type=float, default=0.2, help="Validation set ratio (chronological split)")
     ap.add_argument("--test-ratio", type=float, default=0.2, help="Test set ratio (chronological split)")
