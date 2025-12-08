@@ -44,19 +44,27 @@ def train_tft_trial(config: Dict, checkpoint_dir=None):
         config: Hyperparameter configuration from Ray Tune
         checkpoint_dir: Directory for checkpoints (optional)
     """
+    import os
     seed_everything(42)
     
+    # Get project root (Ray Tune changes working directory)
+    project_root = Path(__file__).parent.parent.parent.resolve()
+    os.chdir(project_root)
+    
     # Load data (cached for speed)
-    processed_path = Path("outputs/processed.parquet")
+    processed_path = project_root / "outputs" / "processed.parquet"
+    pv_path = project_root / "data" / "raw" / "pv_dataset.xlsx"
+    wx_path = project_root / "data" / "raw" / "wx_dataset.xlsx"
+    
     if processed_path.exists():
         df = pd.read_parquet(processed_path)
     else:
         df = load_and_engineer_features(
-            Path("data/raw/pv_dataset.xlsx"),
-            Path("data/raw/wx_dataset.xlsx"),
+            pv_path,
+            wx_path,
             "Australia/Sydney",
         )
-        persist_processed(df, Path("outputs"))
+        persist_processed(df, project_root / "outputs")
     
     # Solar weighting
     if "sp_zenith" in df.columns:
@@ -196,6 +204,10 @@ def main():
     """Run parallel grid search with Ray Tune."""
     args = parse_args()
     
+    # Convert to absolute path
+    output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
     # Define FULL search space (243 combinations - ALL possibilities)
     # Using tune.grid_search() ensures EVERY combination is tested
     search_space = {
@@ -249,7 +261,7 @@ def main():
             "gpu": args.gpus_per_trial,
         },
         max_concurrent_trials=args.max_concurrent,
-        local_dir=args.output_dir,
+        storage_path=str(output_dir),
         name="tft_full_grid_search",
         verbose=1,
         raise_on_failed_trial=False,  # Continue even if some trials fail
@@ -262,12 +274,12 @@ def main():
     logger.info(f"Best trial validation loss: {best_trial.last_result['val_loss']:.4f}")
     
     # Save results
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    results_dir = output_dir / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
     
     # Export all results to CSV
     df_results = analysis.results_df
-    df_results.to_csv(output_dir / "grid_search_results.csv", index=False)
+    df_results.to_csv(results_dir / "grid_search_results.csv", index=False)
     
     # Save best config
     best_config = {
@@ -276,10 +288,10 @@ def main():
         "trial_id": best_trial.trial_id,
     }
     
-    with open(output_dir / "best_config.json", "w") as f:
+    with open(results_dir / "best_config.json", "w") as f:
         json.dump(best_config, f, indent=2)
     
-    logger.info(f"\nResults saved to {output_dir}")
+    logger.info(f"\nResults saved to {results_dir}")
     logger.info(f"- grid_search_results.csv: All trial results")
     logger.info(f"- best_config.json: Best configuration")
     
