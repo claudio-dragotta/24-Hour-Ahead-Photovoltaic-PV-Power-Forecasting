@@ -130,21 +130,19 @@ def build_cnn_bilstm(input_shape: Tuple[int, int], horizon: int) -> keras.Model:
     # Deep CNN feature extraction (3 conv layers: 64 -> 128 -> 256 filters)
     x = layers.Conv1D(64, kernel_size=5, padding="same", activation="relu", dtype="float16")(inp)
     x = layers.BatchNormalization()(x)
-    
+
     x = layers.Conv1D(128, kernel_size=3, padding="same", activation="relu", dtype="float16")(x)
     x = layers.BatchNormalization()(x)
-    
+
     x = layers.Conv1D(256, kernel_size=3, padding="same", activation="relu", dtype="float16")(x)
     x = layers.BatchNormalization()(x)
-    
+
     # MaxPooling reduces temporal dim (168->84) for computational efficiency
     x = layers.MaxPooling1D(pool_size=2)(x)
 
     # Bidirectional LSTM (128 units) captures complex temporal patterns
     # Reduced recurrent_dropout (0.1->0.05) as train_loss > val_loss indicates room for less regularization
-    x = layers.Bidirectional(
-        layers.LSTM(128, return_sequences=False, recurrent_dropout=0.05)
-    )(x)
+    x = layers.Bidirectional(layers.LSTM(128, return_sequences=False, recurrent_dropout=0.05))(x)
     x = layers.Dropout(0.2)(x)  # Reduced from 0.3 to 0.2
 
     # Additional dense layer for non-linear transformation
@@ -175,14 +173,14 @@ def build_cnn_bilstm_fusion_attention(
     dropout_rate: float = 0.2,
 ) -> keras.Model:
     """Build 3-branch fusion CNN-BiLSTM with attention.
-    
+
     Multi-level fusion combining:
     - Branch 1: PV history (CNN → BiLSTM)
     - Branch 2: Historical weather (Dense → BiLSTM)
     - Branch 3: Forecast weather (Attention over forecast horizon)
-    
+
     Final fusion uses attention mechanism to weight contributions from each branch.
-    
+
     Args:
         pv_seq_len: Length of PV history lookback
         weather_seq_len: Length of historical weather lookback
@@ -192,11 +190,11 @@ def build_cnn_bilstm_fusion_attention(
         embedding_dim: Embedding dimension for attention
         num_attention_heads: Number of attention heads
         dropout_rate: Dropout rate for regularization
-    
+
     Returns:
         Compiled multi-input Keras model
     """
-    
+
     # ===== BRANCH 1: PV History =====
     pv_input = keras.Input(shape=(pv_seq_len, 1), name="pv_history")
     pv = layers.Conv1D(64, kernel_size=5, padding="same", activation="relu", dtype="float16")(pv_input)
@@ -207,15 +205,17 @@ def build_cnn_bilstm_fusion_attention(
     pv = layers.Bidirectional(layers.LSTM(64, return_sequences=False, recurrent_dropout=0.1))(pv)
     pv = layers.Dropout(dropout_rate)(pv)
     pv = layers.Dense(embedding_dim, activation="relu")(pv)
-    
+
     # ===== BRANCH 2: Historical Weather =====
     weather_hist_input = keras.Input(shape=(weather_seq_len, weather_features), name="weather_history")
-    weather_hist = layers.Bidirectional(layers.LSTM(64, return_sequences=True, recurrent_dropout=0.1))(weather_hist_input)
+    weather_hist = layers.Bidirectional(layers.LSTM(64, return_sequences=True, recurrent_dropout=0.1))(
+        weather_hist_input
+    )
     weather_hist = layers.Dropout(dropout_rate)(weather_hist)
     weather_hist = layers.Bidirectional(layers.LSTM(64, return_sequences=False, recurrent_dropout=0.1))(weather_hist)
     weather_hist = layers.Dropout(dropout_rate)(weather_hist)
     weather_hist = layers.Dense(embedding_dim, activation="relu")(weather_hist)
-    
+
     # ===== BRANCH 3: Forecast Weather with Attention =====
     weather_forecast_input = keras.Input(shape=(weather_forecast_len, weather_features), name="weather_forecast")
     weather_forecast = layers.Dense(embedding_dim, activation="relu", dtype="float16")(weather_forecast_input)
@@ -227,49 +227,49 @@ def build_cnn_bilstm_fusion_attention(
     weather_forecast = layers.GlobalAveragePooling1D()(weather_forecast)
     weather_forecast = layers.Dropout(dropout_rate)(weather_forecast)
     weather_forecast = layers.Dense(embedding_dim, activation="relu", dtype="float32")(weather_forecast)
-    
+
     # ===== FUSION with Multi-Head Attention =====
     # Stack embeddings from all 3 branches: reshape each to (batch, 1, embedding_dim) and concatenate
     pv_reshaped = layers.Reshape((1, embedding_dim))(pv)  # (1, embedding_dim)
     weather_hist_reshaped = layers.Reshape((1, embedding_dim))(weather_hist)  # (1, embedding_dim)
     weather_forecast_reshaped = layers.Reshape((1, embedding_dim))(weather_forecast)  # (1, embedding_dim)
-    
+
     # Concatenate along sequence dimension
-    stacked = layers.Concatenate(axis=1)([pv_reshaped, weather_hist_reshaped, weather_forecast_reshaped])  # (3, embedding_dim)
-    
+    stacked = layers.Concatenate(axis=1)(
+        [pv_reshaped, weather_hist_reshaped, weather_forecast_reshaped]
+    )  # (3, embedding_dim)
+
     # Apply attention to weight the 3 branches
     attention_output = layers.MultiHeadAttention(
         num_heads=min(num_attention_heads, 3),
         key_dim=embedding_dim // min(num_attention_heads, 3),
         dropout=dropout_rate,
     )(stacked, stacked)
-    
+
     # Average the attended branches
     fused = layers.GlobalAveragePooling1D()(attention_output)  # (embedding_dim,)
     fused = layers.Dropout(dropout_rate)(fused)
-    
+
     # Dense layers for final prediction
     fused = layers.Dense(256, activation="relu")(fused)
     fused = layers.Dropout(dropout_rate)(fused)
     fused = layers.Dense(128, activation="relu")(fused)
     fused = layers.Dropout(dropout_rate)(fused)
-    
+
     # Output layer (float32 for stability)
     output = layers.Dense(horizon, activation="linear", dtype="float32")(fused)
-    
+
     # Create model
     model = keras.Model(
         inputs=[pv_input, weather_hist_input, weather_forecast_input],
         outputs=output,
-        name="CNN_BiLSTM_Fusion_Attention"
+        name="CNN_BiLSTM_Fusion_Attention",
     )
-    
+
     # Compile with mixed precision
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=1e-3),
         loss="mse",
     )
-    
+
     return model
-
-

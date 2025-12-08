@@ -82,23 +82,17 @@ def build_cnn_bilstm_fusion_attention(
     pv_input = keras.Input(shape=(pv_seq_len, 1), name="pv_history")
 
     # CNN feature extraction for PV temporal patterns
-    pv_x = layers.Conv1D(
-        64, kernel_size=5, padding="same", activation="relu", dtype="float16"
-    )(pv_input)
+    pv_x = layers.Conv1D(64, kernel_size=5, padding="same", activation="relu", dtype="float16")(pv_input)
     pv_x = layers.BatchNormalization()(pv_x)
 
-    pv_x = layers.Conv1D(
-        128, kernel_size=3, padding="same", activation="relu", dtype="float16"
-    )(pv_x)
+    pv_x = layers.Conv1D(128, kernel_size=3, padding="same", activation="relu", dtype="float16")(pv_x)
     pv_x = layers.BatchNormalization()(pv_x)
 
     # MaxPooling reduces sequence length for efficiency
     pv_x = layers.MaxPooling1D(pool_size=2)(pv_x)
 
     # Stacked BiLSTM with Attention
-    pv_x = layers.Bidirectional(
-        layers.LSTM(embedding_dim // 2, return_sequences=True, recurrent_dropout=0.05)
-    )(pv_x)
+    pv_x = layers.Bidirectional(layers.LSTM(embedding_dim // 2, return_sequences=True, recurrent_dropout=0.05))(pv_x)
 
     # Multi-Head Self-Attention (MATNet key component)
     pv_attention = layers.MultiHeadAttention(
@@ -112,35 +106,25 @@ def build_cnn_bilstm_fusion_attention(
     pv_x = layers.LayerNormalization()(pv_x)
 
     # Final BiLSTM to produce single representation
-    pv_x = layers.Bidirectional(
-        layers.LSTM(embedding_dim // 2, return_sequences=False, recurrent_dropout=0.05)
-    )(pv_x)
+    pv_x = layers.Bidirectional(layers.LSTM(embedding_dim // 2, return_sequences=False, recurrent_dropout=0.05))(pv_x)
     pv_features = layers.Dropout(dropout_rate)(pv_x)  # Shape: (batch, embedding_dim)
 
     # =========================================================================
     # BRANCH 2: WEATHER HISTORY
     # =========================================================================
-    weather_hist_input = keras.Input(
-        shape=(weather_seq_len, weather_features), name="weather_history"
-    )
+    weather_hist_input = keras.Input(shape=(weather_seq_len, weather_features), name="weather_history")
 
     # CNN feature extraction for weather patterns
-    wh_x = layers.Conv1D(
-        64, kernel_size=5, padding="same", activation="relu", dtype="float16"
-    )(weather_hist_input)
+    wh_x = layers.Conv1D(64, kernel_size=5, padding="same", activation="relu", dtype="float16")(weather_hist_input)
     wh_x = layers.BatchNormalization()(wh_x)
 
-    wh_x = layers.Conv1D(
-        128, kernel_size=3, padding="same", activation="relu", dtype="float16"
-    )(wh_x)
+    wh_x = layers.Conv1D(128, kernel_size=3, padding="same", activation="relu", dtype="float16")(wh_x)
     wh_x = layers.BatchNormalization()(wh_x)
 
     wh_x = layers.MaxPooling1D(pool_size=2)(wh_x)
 
     # Stacked BiLSTM with Attention
-    wh_x = layers.Bidirectional(
-        layers.LSTM(embedding_dim // 2, return_sequences=True, recurrent_dropout=0.05)
-    )(wh_x)
+    wh_x = layers.Bidirectional(layers.LSTM(embedding_dim // 2, return_sequences=True, recurrent_dropout=0.05))(wh_x)
 
     # Multi-Head Self-Attention
     wh_attention = layers.MultiHeadAttention(
@@ -153,9 +137,7 @@ def build_cnn_bilstm_fusion_attention(
     wh_x = layers.Add()([wh_x, wh_attention])
     wh_x = layers.LayerNormalization()(wh_x)
 
-    wh_x = layers.Bidirectional(
-        layers.LSTM(embedding_dim // 2, return_sequences=False, recurrent_dropout=0.05)
-    )(wh_x)
+    wh_x = layers.Bidirectional(layers.LSTM(embedding_dim // 2, return_sequences=False, recurrent_dropout=0.05))(wh_x)
     weather_hist_features = layers.Dropout(dropout_rate)(wh_x)
 
     # =========================================================================
@@ -172,19 +154,13 @@ def build_cnn_bilstm_fusion_attention(
     # =========================================================================
     # BRANCH 3: WEATHER FORECAST (FUTURE)
     # =========================================================================
-    weather_forecast_input = keras.Input(
-        shape=(weather_forecast_len, weather_features), name="weather_forecast"
-    )
+    weather_forecast_input = keras.Input(shape=(weather_forecast_len, weather_features), name="weather_forecast")
 
     # CNN for forecast patterns (no LSTM needed as it's already future-aligned)
-    wf_x = layers.Conv1D(
-        64, kernel_size=3, padding="same", activation="relu", dtype="float16"
-    )(weather_forecast_input)
+    wf_x = layers.Conv1D(64, kernel_size=3, padding="same", activation="relu", dtype="float16")(weather_forecast_input)
     wf_x = layers.BatchNormalization()(wf_x)
 
-    wf_x = layers.Conv1D(
-        128, kernel_size=3, padding="same", activation="relu", dtype="float16"
-    )(wf_x)
+    wf_x = layers.Conv1D(128, kernel_size=3, padding="same", activation="relu", dtype="float16")(wf_x)
     wf_x = layers.BatchNormalization()(wf_x)
 
     # Flatten and compress
@@ -196,9 +172,7 @@ def build_cnn_bilstm_fusion_attention(
     # FUSION LEVEL 2: (PV+WEATHER_HIST) + WEATHER_FORECAST
     # =========================================================================
     # Forecast is conceptually different (observes future), so fused at higher level
-    fusion_2 = layers.Concatenate(name="fusion_level_2")(
-        [fusion_1, weather_forecast_features]
-    )
+    fusion_2 = layers.Concatenate(name="fusion_level_2")([fusion_1, weather_forecast_features])
 
     fusion_2 = layers.Dense(embedding_dim, activation="relu")(fusion_2)
     fusion_2 = layers.Dropout(dropout_rate)(fusion_2)
@@ -211,9 +185,7 @@ def build_cnn_bilstm_fusion_attention(
     # OUTPUT LAYER
     # =========================================================================
     # Multi-horizon output (always in float32 for numerical stability)
-    output = layers.Dense(horizon, activation="linear", dtype="float32", name="output")(
-        fusion_2
-    )
+    output = layers.Dense(horizon, activation="linear", dtype="float32", name="output")(fusion_2)
 
     # =========================================================================
     # MODEL COMPILATION
