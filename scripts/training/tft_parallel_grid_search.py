@@ -44,27 +44,19 @@ def train_tft_trial(config: Dict, checkpoint_dir=None):
         config: Hyperparameter configuration from Ray Tune
         checkpoint_dir: Directory for checkpoints (optional)
     """
-    import os
     seed_everything(42)
     
-    # Get project root (Ray Tune changes working directory)
-    project_root = Path(__file__).parent.parent.parent.resolve()
-    os.chdir(project_root)
+    # CRITICAL: Use absolute path - Ray workers run in different directories
+    # Always use pre-cached processed.parquet to avoid data loading issues
+    processed_path = Path("/home/claudio/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/outputs/processed.parquet")
     
-    # Load data (cached for speed)
-    processed_path = project_root / "outputs" / "processed.parquet"
-    pv_path = project_root / "data" / "raw" / "pv_dataset.xlsx"
-    wx_path = project_root / "data" / "raw" / "wx_dataset.xlsx"
-    
-    if processed_path.exists():
-        df = pd.read_parquet(processed_path)
-    else:
-        df = load_and_engineer_features(
-            pv_path,
-            wx_path,
-            "Australia/Sydney",
+    if not processed_path.exists():
+        raise FileNotFoundError(
+            f"Processed data not found at {processed_path}. "
+            "Run training once to generate outputs/processed.parquet first."
         )
-        persist_processed(df, project_root / "outputs")
+    
+    df = pd.read_parquet(processed_path)
     
     # Solar weighting
     if "sp_zenith" in df.columns:
@@ -176,8 +168,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--num-samples",
         type=int,
-        default=None,
-        help="Number of random samples (None = full grid search)",
+        default=150,
+        help="Number of random samples (default=150, optimal balance)",
     )
     ap.add_argument(
         "--max-concurrent",
@@ -208,23 +200,23 @@ def main():
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Define FULL search space (243 combinations - ALL possibilities)
-    # Using tune.grid_search() ensures EVERY combination is tested
+    # Define RANDOM search space (sample best configs efficiently)
+    # Random search is MORE EFFICIENT than grid search:
+    # - With 100-150 trials, covers the space well
+    # - Finds optimal configs faster (proven by research)
+    # - ASHA early stopping works better with diverse trials
     search_space = {
-        "hidden_size": tune.grid_search([32, 64, 128]),  # 3 options
-        "attention_heads": tune.grid_search([2, 4, 8]),  # 3 options  
-        "dropout": tune.grid_search([0.2, 0.3, 0.4]),  # 3 options
-        "learning_rate": tune.grid_search([1e-4, 3e-4, 1e-3]),  # 3 options
-        "hidden_continuous_size": tune.grid_search([16, 32, 64]),  # 3 options
+        "hidden_size": tune.choice([32, 48, 64, 96, 128]),  # 5 options
+        "attention_heads": tune.choice([2, 4, 8]),  # 3 options  
+        "dropout": tune.uniform(0.1, 0.5),  # continuous range
+        "learning_rate": tune.loguniform(1e-5, 1e-3),  # log scale
+        "hidden_continuous_size": tune.choice([16, 32, 48, 64]),  # 4 options
         "max_epochs": args.max_epochs,
     }
     
-    # Total combinations: 3 × 3 × 3 × 3 × 3 = 243 configs (COMPLETE GRID)
-    # NO COMBINATION IS SKIPPED - grid_search tests ALL possibilities
-    
-    # Calculate total combinations
-    total_combinations = 3 * 3 * 3 * 3 * 3  # 243
-    logger.info(f"Total grid search combinations: {total_combinations}")
+    # Default: 150 trials (unless user specifies --num-samples)
+    num_trials = args.num_samples if args.num_samples else 150
+    logger.info(f"Random search with {num_trials} trial samples")
     
     # ASHA scheduler for early stopping of bad trials
     scheduler = ASHAScheduler(
@@ -241,19 +233,19 @@ def main():
         max_report_frequency=30,
     )
     
-    # Run grid search
-    logger.info(f"Starting FULL parallel grid search with Ray Tune")
-    logger.info(f"Total combinations: {total_combinations}")
+    # Run random search
+    logger.info(f"Starting RANDOM parallel search with Ray Tune")
+    logger.info(f"Total trials: {num_trials}")
     logger.info(f"Max concurrent trials: {args.max_concurrent}")
     logger.info(f"GPUs per trial: {args.gpus_per_trial}")
-    logger.info(f"Estimated time: ~{total_combinations * 15 / args.max_concurrent / 60:.1f} hours")
-    logger.info(f"  (assuming 15 min/trial with early stopping)")
+    logger.info(f"Estimated time: ~{num_trials * 12 / args.max_concurrent / 60:.1f} hours")
+    logger.info(f"  (assuming 12 min/trial with ASHA early stopping)")
     logger.info(f"Search space: {search_space}")
     
     analysis = tune.run(
         train_tft_trial,
         config=search_space,
-        num_samples=1 if args.num_samples is None else args.num_samples,  # 1 = full grid
+        num_samples=num_trials,  # Random sampling
         scheduler=scheduler,
         progress_reporter=reporter,
         resources_per_trial={
@@ -262,7 +254,7 @@ def main():
         },
         max_concurrent_trials=args.max_concurrent,
         storage_path=str(output_dir),
-        name="tft_full_grid_search",
+        name="tft_random_search",
         verbose=1,
         raise_on_failed_trial=False,  # Continue even if some trials fail
         resume="AUTO",  # Auto-resume if interrupted
