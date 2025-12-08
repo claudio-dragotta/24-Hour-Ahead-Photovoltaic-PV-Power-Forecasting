@@ -109,7 +109,7 @@ def train_lightgbm_multi_horizon(
     - train: for model training
     - val: for early stopping AND ensemble weight optimization
     - test: for final evaluation (never seen during training or ensemble tuning)
-    
+
     Returns:
         Tuple of (models, val_preds_df, test_preds_df, metrics)
     """
@@ -132,7 +132,9 @@ def train_lightgbm_multi_horizon(
         train_weights = compute_solar_weights(data.loc[train_mask, "sp_zenith"])
         print(f"\n{'='*60}")
         print(f"Training LightGBM with solar-weighted samples")
-        print(f"Weight stats: min={train_weights.min():.3f}, max={train_weights.max():.3f}, mean={train_weights.mean():.3f}")
+        print(
+            f"Weight stats: min={train_weights.min():.3f}, max={train_weights.max():.3f}, mean={train_weights.mean():.3f}"
+        )
         print(f"{'='*60}")
     else:
         train_weights = None

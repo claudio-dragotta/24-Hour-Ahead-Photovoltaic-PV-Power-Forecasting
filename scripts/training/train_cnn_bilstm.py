@@ -12,7 +12,7 @@ from joblib import dump
 from sklearn.preprocessing import StandardScaler
 
 # Enable mixed precision training for 2-3x faster GPU computation
-policy = tf.keras.mixed_precision.Policy('mixed_float16')
+policy = tf.keras.mixed_precision.Policy("mixed_float16")
 tf.keras.mixed_precision.set_global_policy(policy)
 
 from pv_forecasting.data import save_history
@@ -138,9 +138,7 @@ def make_windows_fusion(
 
 
 def parse_args():
-    ap = argparse.ArgumentParser(
-        description="24h-ahead PV Forecasting with CNN-BiLSTM Multi-Level Fusion + Attention"
-    )
+    ap = argparse.ArgumentParser(description="24h-ahead PV Forecasting with CNN-BiLSTM Multi-Level Fusion + Attention")
     ap.add_argument(
         "--processed-path",
         type=str,
@@ -212,8 +210,11 @@ def main():
     pv_col = "pv"
 
     # Historical weather columns (only base features, no future ones)
-    weather_hist_cols = [col for col in df.columns if col in base_weather_cols or
-                         any(col.startswith(f"{bc}_") for bc in base_weather_cols if not "fut" in col)]
+    weather_hist_cols = [
+        col
+        for col in df.columns
+        if col in base_weather_cols or any(col.startswith(f"{bc}_") for bc in base_weather_cols if not "fut" in col)
+    ]
     # Filter to only existing base weather cols
     weather_hist_cols = [col for col in base_weather_cols if col in df.columns]
 
@@ -271,27 +272,15 @@ def main():
 
     # Scale weather history
     wh_scaler = StandardScaler()
-    X_wh_train_scaled = wh_scaler.fit_transform(
-        X_wh_train.reshape(-1, X_wh_train.shape[-1])
-    ).reshape(X_wh_train.shape)
-    X_wh_val_scaled = wh_scaler.transform(X_wh_val.reshape(-1, X_wh_val.shape[-1])).reshape(
-        X_wh_val.shape
-    )
-    X_wh_test_scaled = wh_scaler.transform(X_wh_test.reshape(-1, X_wh_test.shape[-1])).reshape(
-        X_wh_test.shape
-    )
+    X_wh_train_scaled = wh_scaler.fit_transform(X_wh_train.reshape(-1, X_wh_train.shape[-1])).reshape(X_wh_train.shape)
+    X_wh_val_scaled = wh_scaler.transform(X_wh_val.reshape(-1, X_wh_val.shape[-1])).reshape(X_wh_val.shape)
+    X_wh_test_scaled = wh_scaler.transform(X_wh_test.reshape(-1, X_wh_test.shape[-1])).reshape(X_wh_test.shape)
 
     # Scale weather forecast
     wf_scaler = StandardScaler()
-    X_wf_train_scaled = wf_scaler.fit_transform(
-        X_wf_train.reshape(-1, X_wf_train.shape[-1])
-    ).reshape(X_wf_train.shape)
-    X_wf_val_scaled = wf_scaler.transform(X_wf_val.reshape(-1, X_wf_val.shape[-1])).reshape(
-        X_wf_val.shape
-    )
-    X_wf_test_scaled = wf_scaler.transform(X_wf_test.reshape(-1, X_wf_test.shape[-1])).reshape(
-        X_wf_test.shape
-    )
+    X_wf_train_scaled = wf_scaler.fit_transform(X_wf_train.reshape(-1, X_wf_train.shape[-1])).reshape(X_wf_train.shape)
+    X_wf_val_scaled = wf_scaler.transform(X_wf_val.reshape(-1, X_wf_val.shape[-1])).reshape(X_wf_val.shape)
+    X_wf_test_scaled = wf_scaler.transform(X_wf_test.reshape(-1, X_wf_test.shape[-1])).reshape(X_wf_test.shape)
 
     # Compute solar weights
     if "sp_zenith" in df.columns:
@@ -339,12 +328,8 @@ def main():
     print(f"Batch size: {args.batch_size}\n")
 
     callbacks = [
-        tf.keras.callbacks.EarlyStopping(
-            patience=20, restore_best_weights=True, monitor="val_loss", verbose=1
-        ),
-        tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss", factor=0.7, patience=3, min_lr=1e-5, verbose=1
-        ),
+        tf.keras.callbacks.EarlyStopping(patience=20, restore_best_weights=True, monitor="val_loss", verbose=1),
+        tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.7, patience=3, min_lr=1e-5, verbose=1),
         tf.keras.callbacks.ModelCheckpoint(
             filepath=str(out_dir / "model_best.keras"), save_best_only=True, monitor="val_loss"
         ),

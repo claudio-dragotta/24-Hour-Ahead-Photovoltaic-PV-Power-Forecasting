@@ -7,20 +7,20 @@ supporting both scenarios with and without future meteorological data.
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
-import inspect
 
 import numpy as np
 import pandas as pd
 import torch
+from lightning.pytorch import Trainer, seed_everything
+from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_forecasting import TimeSeriesDataSet
 from pytorch_forecasting.data.encoders import GroupNormalizer
 from pytorch_forecasting.metrics import QuantileLoss
 from pytorch_forecasting.models import TemporalFusionTransformer
-from lightning.pytorch import Trainer, seed_everything
-from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 
 from pv_forecasting.logger import get_logger
 from pv_forecasting.metrics import mase, rmse
@@ -82,7 +82,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--learning-rate", type=float, default=3e-4, help="initial learning rate")
     ap.add_argument("--weight-decay", type=float, default=1e-4, help="optimizer weight decay (AdamW)")
     ap.add_argument(
-        "--lr-patience", type=int, default=8, help="reduce-on-plateau patience for LR scheduler (epochs without val gain)"
+        "--lr-patience",
+        type=int,
+        default=8,
+        help="reduce-on-plateau patience for LR scheduler (epochs without val gain)",
     )
     ap.add_argument(
         "--early-stopping-patience",
@@ -191,10 +194,7 @@ def main() -> None:
     past_unknown = [
         c
         for c in df.columns
-        if c.startswith(("pv_lag", "ghi_lag", "dni_lag", "dhi_lag"))
-        or "_roll" in c
-        or "_var" in c
-        or c == "kc"
+        if c.startswith(("pv_lag", "ghi_lag", "dni_lag", "dhi_lag")) or "_roll" in c or "_var" in c or c == "kc"
     ]
 
     # Future meteo mode: include raw weather as known future (NWP scenario)
@@ -464,7 +464,12 @@ def main() -> None:
         if metric_mask_desc:
             metric_summary["metric_filter"] = metric_mask_desc
     else:
-        metric_summary = {"rmse_model_avg": None, "rmse_naive_avg": None, "mase_model_avg": None, "mase_naive_avg": None}
+        metric_summary = {
+            "rmse_model_avg": None,
+            "rmse_naive_avg": None,
+            "mase_model_avg": None,
+            "mase_naive_avg": None,
+        }
         if metric_mask_desc:
             metric_summary["metric_filter"] = metric_mask_desc
         logger.error("no metrics computed; check filtering settings")

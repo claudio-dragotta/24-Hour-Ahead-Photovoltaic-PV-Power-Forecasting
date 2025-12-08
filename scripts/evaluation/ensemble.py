@@ -41,17 +41,17 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--lgbm-val", type=str, default=None, help="path to LightGBM VALIDATION predictions CSV")
     ap.add_argument("--cnn-val", type=str, default=None, help="path to CNN-BiLSTM VALIDATION predictions CSV")
     ap.add_argument("--tft-val", type=str, default=None, help="path to TFT VALIDATION predictions CSV")
-    
+
     # Model prediction paths - TEST (for final evaluation)
     ap.add_argument("--lgbm-test", type=str, default=None, help="path to LightGBM TEST predictions CSV")
     ap.add_argument("--cnn-test", type=str, default=None, help="path to CNN-BiLSTM TEST predictions CSV")
     ap.add_argument("--tft-test", type=str, default=None, help="path to TFT TEST predictions CSV")
-    
+
     # Legacy arguments (for backward compatibility)
     ap.add_argument("--lgbm", type=str, default=None, help="[DEPRECATED] use --lgbm-val and --lgbm-test")
     ap.add_argument("--cnn", type=str, default=None, help="[DEPRECATED] use --cnn-val and --cnn-test")
     ap.add_argument("--tft", type=str, default=None, help="[DEPRECATED] use --tft-val and --tft-test")
-    
+
     ap.add_argument("--outdir", type=str, default="outputs_ensemble", help="output directory for ensemble results")
     ap.add_argument(
         "--method",
@@ -410,7 +410,7 @@ def exhaustive_search_ensemble(
 
 def main() -> None:
     """Main ensemble optimization function.
-    
+
     IMPORTANT: To prevent data leakage, this function:
     1. Uses VALIDATION predictions to optimize ensemble weights
     2. Applies optimized weights to TEST predictions for final evaluation
@@ -428,7 +428,7 @@ def main() -> None:
     lgbm_test = args.lgbm_test or args.lgbm
     cnn_test = args.cnn_test or args.cnn
     tft_test = args.tft_test or args.tft
-    
+
     # Warn if using legacy arguments (potential data leakage)
     if args.lgbm or args.cnn or args.tft:
         print("[WARNING] Using legacy arguments (--lgbm, --cnn, --tft).")
@@ -546,7 +546,7 @@ def main() -> None:
         "optimization_method": args.method,
         "optimization_metric": args.metric,
         f"best_val_{args.metric}": float(best_metric),
-        "note": "Weights optimized on VALIDATION set to prevent data leakage"
+        "note": "Weights optimized on VALIDATION set to prevent data leakage",
     }
     weights_path = out_dir / "ensemble_weights.json"
     weights_path.write_text(json.dumps(weights_dict, indent=2))
@@ -605,7 +605,7 @@ def main() -> None:
                 "mae": float(mae_ens),
             },
         },
-        "note": "Weights optimized on validation set, metrics computed on test set (no data leakage)"
+        "note": "Weights optimized on validation set, metrics computed on test set (no data leakage)",
     }
     metrics_path = out_dir / "metrics_ensemble.json"
     metrics_path.write_text(json.dumps(metrics_summary, indent=2))
