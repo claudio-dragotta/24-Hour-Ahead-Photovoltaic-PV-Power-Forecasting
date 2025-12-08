@@ -14,9 +14,11 @@ import pandas as pd
 
 from .data import align_hourly, load_pv_xlsx, load_wx_xlsx, save_processed
 from .features import (
+    add_calendar_flags,
     add_clearsky,
     add_kc,
     add_lags,
+    add_rolling_vars_h,
     add_rollings_h,
     add_solar_position,
     add_time_cyclical,
@@ -24,11 +26,11 @@ from .features import (
     standardize_feature_columns,
 )
 
-DEFAULT_LAG_HOURS: Tuple[int, ...] = (1, 24, 168)
-"""Default lag periods: 1h (recent), 24h (daily), 168h (weekly)."""
+DEFAULT_LAG_HOURS: Tuple[int, ...] = (1, 24, 48, 72, 96, 168)
+"""Default lag periods: 1h (recent), 24h (daily), 48h/72h/96h (multi-day), 168h (weekly)."""
 
-DEFAULT_ROLLING_HOURS: Tuple[int, ...] = (3, 6)
-"""Default rolling windows: 3h and 6h moving averages."""
+DEFAULT_ROLLING_HOURS: Tuple[int, ...] = (3, 6, 12, 24)
+"""Default rolling windows: 3h, 6h, 12h, and 24h moving averages (mean and variance)."""
 
 
 def load_and_engineer_features(
@@ -116,6 +118,7 @@ def load_and_engineer_features(
     df = encode_weather_description(df, col="weather_description")
 
     df = add_time_cyclical(df)
+    df = add_calendar_flags(df)
 
     if include_solar:
         df = add_solar_position(df)
@@ -134,12 +137,15 @@ def load_and_engineer_features(
     roll_cols = [c for c in ["pv", "ghi", "dni"] if c in df.columns]
     if rolling_hours and roll_cols:
         df = add_rollings_h(df, roll_cols, list(rolling_hours))
+        df = add_rolling_vars_h(df, roll_cols, list(rolling_hours))
 
     df = df.sort_index()
     if dropna:
         # Drop rows with NaN only in critical numeric columns (lag features, target, irradiance)
         # Keep text columns like 'weather_description' even if NaN
-        critical_cols = [c for c in df.columns if any(x in c for x in ["pv", "ghi", "dni", "dhi", "lag", "roll"])]
+        critical_cols = [
+            c for c in df.columns if any(x in c for x in ["pv", "ghi", "dni", "dhi", "lag", "roll", "var"])
+        ]
         df = df.dropna(subset=critical_cols)
 
     df = df.copy()

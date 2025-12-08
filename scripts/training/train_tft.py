@@ -9,7 +9,8 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
+import inspect
 
 import numpy as np
 import pandas as pd
@@ -28,15 +29,16 @@ from pv_forecasting.pipeline import load_and_engineer_features, persist_processe
 logger = get_logger(__name__)
 
 
-def compute_solar_weights(zenith_deg: pd.Series, min_weight: float = 0.1) -> np.ndarray:
+def compute_solar_weights(zenith_deg: pd.Series, min_weight: float = 0.1, gamma: float = 1.5) -> np.ndarray:
     """Compute sample weights based on solar zenith angle.
 
-    Higher weights during daytime (low zenith) and lower weights at night (high zenith).
-    Uses cosine of zenith angle as it represents solar irradiance intensity.
+    Higher weights during daytime (low zenith) and lower weights at night (high zenith),
+    using cosine(zenith)^gamma to emphasize diurnal hours.
 
     Args:
         zenith_deg: Solar zenith angle in degrees (0° = sun overhead, 90° = horizon)
         min_weight: Minimum weight to assign (prevents zero weights at night)
+        gamma: Exponent applied to cosine to boost daytime (gamma>1 reduces night weight)
 
     Returns:
         Array of sample weights normalized to mean=1.0
@@ -44,8 +46,8 @@ def compute_solar_weights(zenith_deg: pd.Series, min_weight: float = 0.1) -> np.
     zenith_rad = np.deg2rad(zenith_deg.values)
     # cos(zenith) ranges from 1 (sun overhead) to 0 (horizon) to negative (night)
     cos_zenith = np.cos(zenith_rad)
-    # Clip to [0, 1] and add minimum weight
-    weights = np.maximum(cos_zenith, 0.0) + min_weight
+    # Clip to [0, 1], boost daytime with gamma, and add minimum weight
+    weights = np.maximum(cos_zenith, 0.0) ** gamma + min_weight
     # Normalize to mean=1.0 to preserve overall scale
     weights = weights / weights.mean()
     return weights
@@ -73,16 +75,50 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--horizon", type=int, default=24, help="prediction horizon in hours")
     ap.add_argument("--epochs", type=int, default=100, help="maximum training epochs")
     ap.add_argument("--batch-size", type=int, default=64, help="training batch size")
-    ap.add_argument("--hidden-size", type=int, default=32, help="TFT hidden size (reduced for regularization)")
-    ap.add_argument("--attention-heads", type=int, default=2, help="number of attention heads (reduced for regularization)")
-    ap.add_argument("--dropout", type=float, default=0.4, help="dropout rate (increased for regularization)")
-    ap.add_argument("--learning-rate", type=float, default=1e-4, help="initial learning rate (reduced for stability)")
+    ap.add_argument("--hidden-size", type=int, default=64, help="TFT hidden size")
+    ap.add_argument("--hidden-continuous-size", type=int, default=32, help="size of continuous variable embeddings")
+    ap.add_argument("--attention-heads", type=int, default=4, help="number of attention heads")
+    ap.add_argument("--dropout", type=float, default=0.25, help="dropout rate (0.2-0.3 recommended)")
+    ap.add_argument("--learning-rate", type=float, default=3e-4, help="initial learning rate")
+    ap.add_argument("--weight-decay", type=float, default=1e-4, help="optimizer weight decay (AdamW)")
+    ap.add_argument(
+        "--lr-patience", type=int, default=8, help="reduce-on-plateau patience for LR scheduler (epochs without val gain)"
+    )
+    ap.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=10,
+        help="early stopping patience (epochs without val gain)",
+    )
+    ap.add_argument(
+        "--dayweight-gamma",
+        type=float,
+        default=1.5,
+        help="exponent for solar-based sample weights (gamma>1 boosts daytime)",
+    )
+    ap.add_argument("--dayweight-min", type=float, default=0.1, help="minimum sample weight for nighttime")
+    ap.add_argument(
+        "--metrics-zenith-max",
+        type=float,
+        default=90.0,
+        help="exclude samples with sp_zenith above this value from metrics (default 90 to drop full night)",
+    )
+    ap.add_argument(
+        "--output-dropout",
+        type=float,
+        default=None,
+        help="optional additional output dropout for TFT heads (used if supported by pytorch-forecasting version)",
+    )
     ap.add_argument(
         "--outdir", type=str, default="outputs_tft", help="output directory for checkpoints and predictions"
     )
     ap.add_argument(
-        "--use-future-meteo", action="store_true", help="use future weather covariates if available (NWP mode)"
+        "--no-future-meteo",
+        dest="use_future_meteo",
+        action="store_false",
+        help="Disable future weather covariates (enabled by default)",
     )
+    ap.set_defaults(use_future_meteo=True)
     ap.add_argument("--train-ratio", type=float, default=0.6, help="training set ratio (chronological split)")
     ap.add_argument("--val-ratio", type=float, default=0.2, help="validation set ratio (chronological split)")
     ap.add_argument("--test-ratio", type=float, default=0.2, help="test set ratio (chronological split)")
@@ -117,7 +153,9 @@ def main() -> None:
 
     # Compute solar-based sample weights
     if "sp_zenith" in df.columns:
-        df["sample_weight"] = compute_solar_weights(df["sp_zenith"])
+        df["sample_weight"] = compute_solar_weights(
+            df["sp_zenith"], min_weight=args.dayweight_min, gamma=args.dayweight_gamma
+        )
         logger.info(
             f"computed solar-based sample weights: "
             f"min={df['sample_weight'].min():.3f}, "
@@ -128,7 +166,7 @@ def main() -> None:
         df["sample_weight"] = 1.0
         logger.info("sp_zenith not found, using uniform weights")
 
-    # Known future covariates: time features, solar position, clear-sky estimates
+    # Known future covariates: time features, solar position, clear-sky estimates, calendar flags
     known_future = [
         c
         for c in [
@@ -136,6 +174,8 @@ def main() -> None:
             "hour_cos",
             "doy_sin",
             "doy_cos",
+            "is_weekend",
+            "is_holiday",
             "sp_zenith",
             "sp_azimuth",
             "cs_ghi",
@@ -152,7 +192,8 @@ def main() -> None:
         c
         for c in df.columns
         if c.startswith(("pv_lag", "ghi_lag", "dni_lag", "dhi_lag"))
-        or c.endswith(("roll3h", "roll6h", "roll12h", "roll24h"))
+        or "_roll" in c
+        or "_var" in c
         or c == "kc"
     ]
 
@@ -223,25 +264,37 @@ def main() -> None:
     # Build Temporal Fusion Transformer model
     logger.info("building temporal fusion transformer model...")
     loss = QuantileLoss(quantiles=[0.1, 0.5, 0.9])
+    # Optional output dropout support: only pass if the installed pytorch-forecasting accepts it
+    extra_tft_kwargs: Dict[str, object] = {}
+    if args.output_dropout is not None:
+        sig = inspect.signature(TemporalFusionTransformer.__init__)
+        if "output_dropout" in sig.parameters:
+            extra_tft_kwargs["output_dropout"] = args.output_dropout
+            logger.info(f"enabling output_dropout={args.output_dropout}")
+        else:
+            logger.warning("output_dropout not supported by installed pytorch-forecasting; skipping this option")
     tft = TemporalFusionTransformer.from_dataset(
         training,
         learning_rate=args.learning_rate,
         hidden_size=args.hidden_size,
         attention_head_size=args.attention_heads,
         dropout=args.dropout,
-        hidden_continuous_size=args.hidden_size // 2,
+        hidden_continuous_size=args.hidden_continuous_size,
         loss=loss,
-        optimizer="adam",
-        reduce_on_plateau_patience=3,
+        optimizer="adamw",
+        optimizer_params={"weight_decay": args.weight_decay},
+        reduce_on_plateau_patience=args.lr_patience,
+        **extra_tft_kwargs,
     )
     logger.info(
         f"model config: hidden={args.hidden_size}, heads={args.attention_heads}, "
-        f"dropout={args.dropout}, lr={args.learning_rate}"
+        f"dropout={args.dropout}, lr={args.learning_rate}, weight_decay={args.weight_decay}, "
+        f"hidden_cont_size={args.hidden_continuous_size}, lr_patience={args.lr_patience}"
     )
 
     # Training callbacks
     callbacks = [
-        EarlyStopping(monitor="val_loss", patience=8, mode="min", verbose=True),
+        EarlyStopping(monitor="val_loss", patience=args.early_stopping_patience, mode="min", verbose=True),
         ModelCheckpoint(dirpath=str(out_dir), filename="tft-best", monitor="val_loss", save_top_k=1, mode="min"),
         LearningRateMonitor(logging_interval="epoch"),
     ]
@@ -352,20 +405,38 @@ def main() -> None:
             )
 
     pred_df = pd.DataFrame(rows)
+    # Attach zenith for metric filtering (if available)
+    if "sp_zenith" in df.columns:
+        pred_df = pred_df.merge(
+            df.reset_index()[["time_idx", "sp_zenith"]], on="time_idx", how="left", suffixes=("", "_ref")
+        )
+    else:
+        pred_df["sp_zenith"] = np.nan
     pred_path = out_dir / "predictions_test_tft.csv"
     pred_df.to_csv(pred_path, index=False)
     logger.info(f"saved {len(pred_df)} predictions to {pred_path}")
 
     # Compute metrics per horizon
     logger.info("computing per-horizon metrics...")
+    metric_mask_desc: Optional[str] = None
+    if args.metrics_zenith_max is not None:
+        metric_mask_desc = f"sp_zenith <= {args.metrics_zenith_max}"
+        pred_df = pred_df[pred_df["sp_zenith"].isna() | (pred_df["sp_zenith"] <= args.metrics_zenith_max)]
+        logger.info(f"metric filtering enabled: {metric_mask_desc} (remaining rows: {len(pred_df)})")
     metrics = []
     for h in range(1, args.horizon + 1):
         sub = pred_df[pred_df["horizon_h"] == h]
+        if sub.empty:
+            logger.warning(f"no samples for horizon {h} after metric filtering; skipping")
+            continue
         naive_vals = sub["y_naive"].values
         valid_mask = ~np.isnan(naive_vals)
         y_true = sub["y_true"].values[valid_mask]
         y_pred = sub["y_pred"].values[valid_mask]
         naive_valid = naive_vals[valid_mask]
+        if len(y_true) == 0:
+            logger.warning(f"no valid samples for horizon {h} after naive masking; skipping")
+            continue
 
         rmse_model = rmse(y_true, y_pred)
         rmse_naive = rmse(y_true, naive_valid)
@@ -383,12 +454,20 @@ def main() -> None:
         )
 
     # Summary metrics
-    metric_summary = {
-        "rmse_model_avg": float(np.mean([m["rmse_model"] for m in metrics])),
-        "rmse_naive_avg": float(np.mean([m["rmse_naive"] for m in metrics])),
-        "mase_model_avg": float(np.mean([m["mase_model"] for m in metrics])),
-        "mase_naive_avg": float(np.mean([m["mase_naive"] for m in metrics])),
-    }
+    if metrics:
+        metric_summary = {
+            "rmse_model_avg": float(np.mean([m["rmse_model"] for m in metrics])),
+            "rmse_naive_avg": float(np.mean([m["rmse_naive"] for m in metrics])),
+            "mase_model_avg": float(np.mean([m["mase_model"] for m in metrics])),
+            "mase_naive_avg": float(np.mean([m["mase_naive"] for m in metrics])),
+        }
+        if metric_mask_desc:
+            metric_summary["metric_filter"] = metric_mask_desc
+    else:
+        metric_summary = {"rmse_model_avg": None, "rmse_naive_avg": None, "mase_model_avg": None, "mase_naive_avg": None}
+        if metric_mask_desc:
+            metric_summary["metric_filter"] = metric_mask_desc
+        logger.error("no metrics computed; check filtering settings")
 
     metrics_path = out_dir / "metrics_test_tft.json"
     (out_dir / "metrics_test_tft.json").write_text(json.dumps(metrics, indent=2))
@@ -411,7 +490,15 @@ def main() -> None:
         "hidden_size": args.hidden_size,
         "attention_heads": args.attention_heads,
         "dropout": args.dropout,
+        "hidden_continuous_size": args.hidden_continuous_size,
         "learning_rate": args.learning_rate,
+        "weight_decay": args.weight_decay,
+        "lr_patience": args.lr_patience,
+        "early_stopping_patience": args.early_stopping_patience,
+        "dayweight_gamma": args.dayweight_gamma,
+        "dayweight_min": args.dayweight_min,
+        "metrics_zenith_max": args.metrics_zenith_max,
+        "output_dropout": args.output_dropout,
         "use_future_meteo": args.use_future_meteo,
         "train_ratio": args.train_ratio,
         "val_ratio": args.val_ratio,
