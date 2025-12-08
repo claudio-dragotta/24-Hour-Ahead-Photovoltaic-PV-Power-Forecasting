@@ -163,7 +163,7 @@ def train_tft_trial(config: Dict, checkpoint_dir=None):
         max_epochs=config.get("max_epochs", 50),
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=1,
-        strategy=None,  # disable distributed/auto strategies inside Ray worker
+        strategy="single_device",  # avoid DDP/spawn under Ray
         callbacks=callbacks,
         enable_progress_bar=False,
         enable_model_summary=False,
@@ -247,11 +247,12 @@ def main():
     logger.info(f"Random search with {num_trials} trial samples")
     
     # ASHA scheduler for early stopping of bad trials
+    grace = max(1, min(8, args.max_epochs // 2))  # ensure >0
     scheduler = ASHAScheduler(
         metric="val_loss",
         mode="min",
         max_t=args.max_epochs,
-        grace_period=min(8, args.max_epochs // 2),  # Adaptive grace period
+        grace_period=grace,
         reduction_factor=3,  # More aggressive pruning
     )
     
@@ -285,11 +286,18 @@ def main():
         name="tft_random_search",
         verbose=1,
         raise_on_failed_trial=False,  # Continue even if some trials fail
-        resume="AUTO",  # Auto-resume if interrupted
+        resume=False,  # avoid resuming broken state; set to "AUTO" if you need resume
     )
     
-    # Get best configuration
-    best_trial = analysis.get_best_trial("val_loss", "min", "last")
+    # Get best configuration (if any trial succeeded)
+    best_trial = None
+    try:
+        best_trial = analysis.get_best_trial("val_loss", "min", "last")
+    except Exception:
+        logger.error("No successful trials with val_loss; check error logs.")
+    if best_trial is None or "val_loss" not in best_trial.last_result:
+        logger.error("Best trial missing val_loss; skipping result export.")
+        return
     logger.info(f"\nBest trial config: {best_trial.config}")
     logger.info(f"Best trial validation loss: {best_trial.last_result['val_loss']:.4f}")
     
