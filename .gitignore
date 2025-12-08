@@ -114,3 +114,4 @@ temp/
 docs/_build/
 site/
 # METRICS_ANALYSIS.md
+.claude/
