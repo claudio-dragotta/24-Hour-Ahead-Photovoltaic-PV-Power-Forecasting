@@ -113,7 +113,7 @@ def parse_args() -> argparse.Namespace:
         help="optional additional output dropout for TFT heads (used if supported by pytorch-forecasting version)",
     )
     ap.add_argument(
-        "--outdir", type=str, default="outputs_tft", help="output directory for checkpoints and predictions"
+        "--outdir", type=str, default="outputs/tft/baseline", help="output directory for checkpoints and predictions"
     )
     ap.add_argument(
         "--no-future-meteo",
@@ -282,7 +282,6 @@ def main() -> None:
         hidden_continuous_size=args.hidden_continuous_size,
         loss=loss,
         optimizer="adamw",
-        optimizer_params={"weight_decay": args.weight_decay},
         reduce_on_plateau_patience=args.lr_patience,
         **extra_tft_kwargs,
     )

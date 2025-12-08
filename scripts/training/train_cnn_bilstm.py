@@ -155,7 +155,7 @@ def parse_args():
     ap.add_argument("--embedding-dim", type=int, default=128, help="embedding dimension")
     ap.add_argument("--num-heads", type=int, default=8, help="number of attention heads")
     ap.add_argument("--dropout", type=float, default=0.2, help="dropout rate")
-    ap.add_argument("--outdir", type=str, default="outputs_baseline/cnn")
+    ap.add_argument("--outdir", type=str, default="outputs/cnn/baseline")
     ap.add_argument(
         "--no-future-meteo",
         dest="use_future_meteo",

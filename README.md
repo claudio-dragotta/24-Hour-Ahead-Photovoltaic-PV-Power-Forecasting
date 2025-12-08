@@ -97,14 +97,16 @@ See [EXPERIMENTS.md](EXPERIMENTS.md) for detailed comparison plan and [METRICS_A
 
 ### Completed Baselines
 
-| Model | Architecture | Epochs | Best Val Loss | Test RMSE | Test MAE | Status |
-|-------|--------------|--------|---------------|-----------|----------|--------|
-| **TFT** | Temporal Fusion Transformer | 29 (early stop) | 3.549 | 3.7060 | 2.3254 | Completed |
-| **CNN-BiLSTM** | 3-layer CNN (64→128→256) + BiLSTM(128) | 49 (early stop) | 18.8721 | 3.7267 | 2.3294 | Completed |
+| Model | Architecture | Epochs | Best Val Loss | Test RMSE | Test MAE | Output Directory | Status |
+|-------|--------------|--------|---------------|-----------|----------|------------------|--------|
+| **TFT Baseline** | Temporal Fusion Transformer | 29 (early stop) | 3.549 | **3.7060** | 2.3254 | `outputs/tft/baseline/` | ✅ Completed |
+| **CNN-BiLSTM Baseline** | 3-layer CNN (64→128→256) + BiLSTM(128) | 49 (early stop) | 18.8721 | 3.7267 | 2.3294 | `outputs/cnn/baseline/` | ✅ Completed |
+| **CNN-BiLSTM Fusion** | 3-branch fusion + attention | 55 (early stop) | - | 4.364 | - | `outputs/cnn/fusion_attention/` | ⚠️ Overfitted |
+| **LightGBM** | 24 separate models (one per horizon) | - | - | - | - | `outputs/lgbm/baseline/` | 🚧 Pending |
 
 ### Key Observations
 
-1. **TFT vs CNN Performance**: Both models achieve nearly identical test RMSE (~3.71), demonstrating that well-tuned deep learning architectures can match attention-based models.
+1. **TFT vs CNN Performance**: Both baseline models achieve nearly identical test RMSE (~3.71), demonstrating that well-tuned deep learning architectures can match attention-based models.
 
 2. **Optimization Impact**: 
    - TFT: Reduced from 613K→176K parameters with optimized hyperparameters (hidden=32, heads=2, dropout=0.4, lr=1e-4)
@@ -116,7 +118,25 @@ See [EXPERIMENTS.md](EXPERIMENTS.md) for detailed comparison plan and [METRICS_A
 
 4. **Regularization Strategy**: Both models use solar-weighted sample training to prioritize daytime predictions where PV generation matters most.
 
-**Next Steps**: Complete LightGBM baseline and build ensemble from all three architectures.
+5. **Output Organization**: All model outputs are organized in `outputs/{model_type}/{variant}/` structure for easy comparison and ensemble building.
+
+### Hyperparameter Optimization Experiments
+
+We tested alternative TFT configurations to find optimal model capacity:
+
+| Configuration | Hidden Size | Attention Heads | Dropout | Parameters | Test RMSE | Test MASE | Result |
+|---------------|-------------|-----------------|---------|------------|-----------|-----------|--------|
+| **Baseline (Best)** | 32 | 2 | 0.4 | 176K | **3.7060** | **0.4254** | ✅ Optimal |
+| Larger Capacity | 64 | 4 | 0.25 | 613K | 5.0741 | 0.7766 | ❌ Overfitting |
+
+**Key Finding**: Despite 3.5× more parameters, the larger model overfits and performs **37% worse** (RMSE 5.07 vs 3.71). The baseline configuration with **stronger regularization** (dropout=0.4) and **smaller capacity** (hidden=32) generalizes much better to test data.
+
+**Lesson**: For time series forecasting with limited data (~17K samples), aggressive regularization and smaller models often outperform larger architectures.
+
+**Next Steps**: 
+1. **Hyperparameter Grid Search**: Use Ray Tune to test all 243 combinations of TFT hyperparameters (3 concurrent trials, ~20 hours with ASHA early stopping)
+2. **LightGBM Baseline**: Complete multi-horizon gradient boosting baseline
+3. **Ensemble System**: Build and optimize weighted ensemble from TFT + CNN + LightGBM
 
 ---
 
