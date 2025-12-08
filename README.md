@@ -53,10 +53,10 @@ This project follows professional software engineering best practices:
 
 This project implements a **state-of-the-art ensemble system** with physics-informed sample weighting:
 
-**Unified Feature Set** (49 features):
-- Standard lags: 1h, 24h, **72h** (3-day), 168h (1-week)
-- Rationale: Weather patterns persist 2-4 days → 3-day lag improves forecasts
-- Solar position, clear-sky estimates, and clearness index (physics-informed features)
+**Unified Feature Set**:
+- Lags: 1h, 24h, 48h, 72h, 96h, 168h (multi-day memory)
+- Rolling mean & variance: 3h, 6h, 12h, 24h
+- Solar position, clear-sky estimates, clearness index, and calendar flags (weekend/holiday)
 
 **Three Model Architectures:**
 
@@ -67,8 +67,8 @@ This project implements a **state-of-the-art ensemble system** with physics-info
 **Solar-Weighted Training:**
 
 All three models use **sample weighting based on solar zenith angle** to prioritize daylight hours:
-- Weight formula: `cos(zenith) + 0.1`, normalized to mean=1.0
-- Effect: Night hours (weight ≈ 0.3) vs peak sun (weight ≈ 3.1)
+- Weight formula: `cos(zenith)^gamma + min_weight`, normalized to mean=1.0 (default gamma=1.5, min_weight=0.1)
+- Effect: Night hours (weight ≈ 0.1) vs peak sun (weight boosted by gamma)
 - Goal: Improve MASE by focusing on accurate daytime predictions
 
 **Ensemble Strategy:**
@@ -170,32 +170,29 @@ This section provides a comprehensive overview of the entire workflow, from raw 
           │  STEP 1: PREPROCESSING       │
           │  Feature Engineering         │
           │  - Lag features (1h, 24h,    │
-          │    72h, 168h)                │
-          │  - Rolling statistics        │
-          │  - Time features             │
+          │    48h, 72h, 96h, 168h)      │
+          │  - Rolling mean/var          │
+          │    (3h, 6h, 12h, 24h)        │
+          │  - Time + weekend/holiday    │
+          │    + solar/clear-sky         │
           └──────────┬───────────────────┘
                      │
-        ┌────────────┴────────────┐
-        │                         │
-        ▼                         ▼
-outputs_baseline/          outputs_lag72/
-processed.parquet          processed.parquet
-(45 features)              (49 features: +lag72)
-        │                         │
-        └────────┬────────────────┘
+                     ▼
+          outputs/processed.parquet
+      (feature set esteso di default)
+             (legacy: outputs_baseline/, outputs_lag72/)
                  │
                  ▼
     ┌────────────────────────────┐
-    │  STEP 2: TRAIN 6 MODELS    │
-    │  3 architectures ×         │
-    │  2 feature configs         │
+    │  STEP 2: TRAIN MODELS      │
+    │  3 architectures           │
     │                            │
-    │  LightGBM-Baseline         │
-    │  LightGBM-Lag72           │
-    │  CNN-BiLSTM-Baseline      │
-    │  CNN-BiLSTM-Lag72         │
-    │  TFT-Baseline              │
-    │  TFT-Lag72                 │
+    │  LightGBM                  │
+    │  CNN-BiLSTM                │
+    │  TFT                       │
+    │                            │
+    │  (legacy: varianti         │
+    │   baseline/lag72)          │
     └────────┬───────────────────┘
              │
              │ Each model produces:
@@ -275,36 +272,29 @@ Total Dataset: 17,374 hours
 
 ### Step-by-Step Instructions
 
-#### STEP 1: Preprocessing (Generate Both Datasets)
+#### STEP 1: Preprocessing (Default Extended Features)
 
-Generate two versions of processed data: baseline and lag72.
+La pipeline crea `outputs/processed.parquet` con il set esteso di feature:
 
-**1a. Baseline features (45 features):**
-```bash
-# Already done! File exists at:
-# outputs_baseline/processed.parquet
-```
+- Lag: 1h, 24h, 48h, 72h, 96h, 168h
+- Rolling mean & variance: 3h, 6h, 12h, 24h
+- Time features, weekend/holiday flags, solar position, clear-sky, clearness index
 
-**1b. Lag72 features (49 features: +3-day lag):**
-```bash
-python scripts/preprocessing/generate_processed_lag72.py
-# Output: outputs_lag72/processed.parquet
-```
-
-**What happens:**
-
-- Loads raw Excel files (`pv_dataset.xlsx`, `wx_dataset.xlsx`)
-- Merges PV + weather data by timestamp
-- Creates lag features: 1h, 24h, (72h), 168h ago
-- Creates rolling statistics (3h, 6h windows)
-- Adds time features (hour, month, day_of_year)
-- Splits into train/validation/test (60/20/20)
+I training script (`train_cnn_bilstm.py`, `train_tft.py`, `train_lgbm.py`) rigenerano automaticamente il parquet se non esiste. Se vuoi confrontare con i vecchi esperimenti legacy (baseline/lag72), puoi ancora usare i file in `outputs_baseline/` e `outputs_lag72/`, ma il default è il set esteso sopra.
 
 ---
 
-#### STEP 2: Train All 6 Models
+#### STEP 2: Train Models
 
-Train each model on both feature configurations.
+Per il flusso standard con le feature estese, lancia:
+
+```bash
+python scripts/training/train_lgbm.py --outdir outputs_lgbm
+python scripts/training/train_cnn_bilstm.py --outdir outputs_cnn
+python scripts/training/train_tft.py --outdir outputs_tft --use-future-meteo  # se hai NWP future
+```
+
+I comandi legacy sotto servono solo se vuoi replicare i vecchi esperimenti baseline/lag72 (opzionali).
 
 **2a. LightGBM Baseline (DONE ✓):**
 ```bash
@@ -530,7 +520,7 @@ timestamp,forecast_hour,predicted_power_kW
 
 ### Quick Command Reference
 
-After training all 6 models, run these commands in sequence:
+After training all 6 models (legacy baseline/lag72 setup), run these commands in sequence. For i nuovi run con feature estese, sostituisci i percorsi con le tue cartelle (`outputs_tft`, `outputs_cnn`, `outputs_lgbm`, ecc.).
 
 ```bash
 # 1. Optimize ensemble (validation set)
@@ -567,7 +557,7 @@ ensemble = EnsembleModel.from_outputs('outputs_ensemble')
 
 ### Key Takeaways
 
-1. **Two feature sets** (baseline vs lag72) → Test if 3-day lag helps
+1. **Feature set esteso** (lag multi-day, rolling mean/var, fisiche, calendario); i set baseline/lag72 restano solo per confronto legacy
 2. **Three architectures** (LightGBM, CNN-BiLSTM, TFT) → Diversification
 3. **Ensemble combines best models** → Better than any single model
 4. **Validation for optimization** → Find best combination/weights
@@ -988,7 +978,7 @@ PY
 
 1) **Data & anti‑leakage**
    - Colonne meteo normalizzate a lowercase (`ghi`, `dni`, `dhi`, `temp`, `humidity`, `clouds`, `wind_speed`).
-   - `pv_forecasting/pipeline.py` crea feature (cicliche, lag 1/24/168, rolling 3/6h, solar/clear‑sky) e salva `outputs/processed.parquet`.
+   - `pv_forecasting/pipeline.py` crea feature (cicliche + flag weekend/holiday, lag 1/24/48/72/96/168, rolling mean/var 3/6/12/24h, solar/clear‑sky) e salva `outputs/processed.parquet`.
    - Due modalità: `--use-future-meteo` se hai covariate future (NWP); altrimenti solo lag + feature fisiche future (derivabili dal timestamp).
 
 2) **LightGBM multi‑orizzonte (24 modelli)**
@@ -1061,6 +1051,9 @@ python scripts/training/train_lgbm.py --outdir outputs_lgbm
 ```bash
 python scripts/training/train_tft.py --outdir outputs_tft --use-future-meteo   # se hai NWP/meteo future
 ```
+   - Default: encoder 168h / decoder 24h, hidden 64, 4 heads, dropout 0.25, AdamW (wd=1e-4), quantile loss (0.1/0.5/0.9).
+   - Pesi diurni nella loss via `--dayweight-gamma` (default 1.5) e `--dayweight-min` (default 0.1); campioni notturni esclusi dalle metriche con `--metrics-zenith-max 90` (puoi disattivare con `--metrics-zenith-max None`).
+   - Se la tua versione di PyTorch Forecasting supporta `output_dropout`, puoi impostarlo con `--output-dropout 0.1` per ulteriore regolarizzazione del gating.
 
 ### Ensemble: Combining Multiple Models
 

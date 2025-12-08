@@ -11,6 +11,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+from pandas.tseries.holiday import AbstractHolidayCalendar
 
 try:
     import pvlib
@@ -56,6 +57,29 @@ def add_time_cyclical(df: pd.DataFrame) -> pd.DataFrame:
     df["doy_sin"] = np.sin(2 * np.pi * day_of_year / 365)
     df["doy_cos"] = np.cos(2 * np.pi * day_of_year / 365)
     return df
+
+
+def add_calendar_flags(df: pd.DataFrame, holiday_calendar: Optional[AbstractHolidayCalendar] = None) -> pd.DataFrame:
+    """Add weekend/holiday indicator features.
+
+    Args:
+        df: Input dataframe with timezone-aware DatetimeIndex.
+        holiday_calendar: Optional pandas holiday calendar to mark holidays.
+
+    Returns:
+        DataFrame with:
+            - is_weekend (0/1)
+            - is_holiday (0/1, all zeros if calendar not provided)
+    """
+    idx = df.index.tz_convert("UTC")
+    out = df.copy()
+    out["is_weekend"] = (idx.weekday >= 5).astype(float)
+    if holiday_calendar is not None:
+        holidays = holiday_calendar.holidays(start=idx.min().date(), end=idx.max().date())
+        out["is_holiday"] = idx.normalize().isin(holidays).astype(float)
+    else:
+        out["is_holiday"] = 0.0
+    return out
 
 
 def add_lags(df: pd.DataFrame, cols: list[str], lags: list[int]) -> pd.DataFrame:
@@ -157,6 +181,15 @@ def add_rollings_h(df: pd.DataFrame, cols: list[str], windows: list[int]) -> pd.
     for c in cols:
         for w in windows:
             out[f"{c}_roll{w}h"] = out[c].rolling(window=w, min_periods=max(1, w // 2)).mean()
+    return out
+
+
+def add_rolling_vars_h(df: pd.DataFrame, cols: list[str], windows: list[int]) -> pd.DataFrame:
+    """Add rolling variance features for hourly data."""
+    out = df.copy()
+    for c in cols:
+        for w in windows:
+            out[f"{c}_var{w}h"] = out[c].rolling(window=w, min_periods=max(1, w // 2)).var(ddof=0)
     return out
 
 
