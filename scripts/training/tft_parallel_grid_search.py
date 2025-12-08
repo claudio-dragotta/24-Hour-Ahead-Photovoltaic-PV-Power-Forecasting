@@ -161,9 +161,9 @@ def train_tft_trial(config: Dict, checkpoint_dir=None):
     # Ray Tune manages GPU allocation, Lightning should auto-detect
     trainer = Trainer(
         max_epochs=config.get("max_epochs", 50),
-        accelerator="gpu" if torch.cuda.is_available() else "cpu",
-        devices=1,
-        strategy="single_device",  # avoid DDP/spawn under Ray
+        accelerator="auto",
+        devices=1,  # Lightning will pick the device from CUDA_VISIBLE_DEVICES set by Ray
+        strategy=None,  # disable DDP/spawn
         callbacks=callbacks,
         enable_progress_bar=False,
         enable_model_summary=False,
