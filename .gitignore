@@ -74,7 +74,6 @@ data/processed/*.joblib
 # outputs/
 # outputs_*/
 # models/
-checkpoints/
 # *.keras
 # *.h5
 # *.pth
@@ -89,7 +88,6 @@ logs/
 lightning_logs/
 tensorboard/
 wandb/
-outputs/**/grid_search/
 
 # Configuration (if contains secrets - keep templates)
 .env
