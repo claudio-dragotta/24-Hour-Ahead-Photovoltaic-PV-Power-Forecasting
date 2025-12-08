@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Dict
 
@@ -44,19 +45,29 @@ def train_tft_trial(config: Dict, checkpoint_dir=None):
         config: Hyperparameter configuration from Ray Tune
         checkpoint_dir: Directory for checkpoints (optional)
     """
+    import sys
+    os.environ.setdefault("PL_DISABLE_FORK", "1")  # avoid Lightning forking inside Ray workers
+    torch.set_num_threads(1)
+    print(f"[TRIAL DEBUG] Starting trial with config: {config}", flush=True)
+    sys.stdout.flush()
+    
     seed_everything(42)
+    print("[TRIAL DEBUG] Seed set", flush=True)
     
     # CRITICAL: Use absolute path - Ray workers run in different directories
     # Always use pre-cached processed.parquet to avoid data loading issues
     processed_path = Path("/home/claudio/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/outputs/processed.parquet")
     
+    print(f"[TRIAL DEBUG] Checking path: {processed_path}", flush=True)
     if not processed_path.exists():
         raise FileNotFoundError(
             f"Processed data not found at {processed_path}. "
             "Run training once to generate outputs/processed.parquet first."
         )
     
+    print("[TRIAL DEBUG] Loading data...", flush=True)
     df = pd.read_parquet(processed_path)
+    print(f"[TRIAL DEBUG] Data loaded: {len(df)} rows", flush=True)
     
     # Solar weighting
     if "sp_zenith" in df.columns:
@@ -93,6 +104,7 @@ def train_tft_trial(config: Dict, checkpoint_dir=None):
     cutoff_train = int(max_time_idx * 0.6)
     cutoff_val = int(max_time_idx * 0.8)
     
+    print(f"[TRIAL DEBUG] Creating datasets (train cutoff={cutoff_train}, val cutoff={cutoff_val})", flush=True)
     # Create datasets
     training = TimeSeriesDataSet(
         df[df["time_idx"] <= cutoff_train],
@@ -107,6 +119,7 @@ def train_tft_trial(config: Dict, checkpoint_dir=None):
         weight="sample_weight",
         allow_missing_timesteps=True,
     )
+    print("[TRIAL DEBUG] Training dataset created", flush=True)
     
     validation = TimeSeriesDataSet.from_dataset(
         training,
@@ -114,11 +127,15 @@ def train_tft_trial(config: Dict, checkpoint_dir=None):
         predict=False,
         stop_randomization=True,
     )
+    print("[TRIAL DEBUG] Validation dataset created", flush=True)
     
-    train_loader = training.to_dataloader(train=True, batch_size=64, num_workers=4)
-    val_loader = validation.to_dataloader(train=False, batch_size=64, num_workers=4)
+    # CRITICAL FIX: num_workers=0 to avoid deadlock in Ray workers
+    train_loader = training.to_dataloader(train=True, batch_size=64, num_workers=0)
+    val_loader = validation.to_dataloader(train=False, batch_size=64, num_workers=0)
+    print("[TRIAL DEBUG] DataLoaders created (num_workers=0 to avoid Ray deadlock)", flush=True)
     
     # Build TFT model with trial config
+    print(f"[TRIAL DEBUG] Building TFT model with config: hidden={config['hidden_size']}, heads={config['attention_heads']}", flush=True)
     loss = QuantileLoss(quantiles=[0.1, 0.5, 0.9])
     tft = TemporalFusionTransformer.from_dataset(
         training,
@@ -131,28 +148,39 @@ def train_tft_trial(config: Dict, checkpoint_dir=None):
         optimizer="adamw",
         reduce_on_plateau_patience=5,
     )
+    print(f"[TRIAL DEBUG] TFT model created ({sum(p.numel() for p in tft.parameters())} params)", flush=True)
     
     # Callbacks
     callbacks = [
         EarlyStopping(monitor="val_loss", patience=8, mode="min", verbose=False),
     ]
     
+    print("[TRIAL DEBUG] Creating Trainer...", flush=True)
     # Trainer with Ray Tune integration
+    # CRITICAL: Use accelerator="auto" to let PyTorch Lightning handle GPU assignment
+    # Ray Tune manages GPU allocation, Lightning should auto-detect
     trainer = Trainer(
         max_epochs=config.get("max_epochs", 50),
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=1,
+        strategy=None,  # disable distributed/auto strategies inside Ray worker
         callbacks=callbacks,
         enable_progress_bar=False,
         enable_model_summary=False,
         logger=False,
+        num_sanity_val_steps=0,
+        enable_checkpointing=False,
     )
+    print(f"[TRIAL DEBUG] Trainer created", flush=True)
     
     # Train
+    print("[TRIAL DEBUG] Starting training...", flush=True)
     trainer.fit(tft, train_dataloaders=train_loader, val_dataloaders=val_loader)
+    print("[TRIAL DEBUG] Training complete!", flush=True)
     
     # Report final validation loss to Ray Tune
     final_val_loss = trainer.callback_metrics.get("val_loss", float('inf'))
+    print(f"[TRIAL DEBUG] Final val_loss={final_val_loss}", flush=True)
     tune.report(val_loss=float(final_val_loss))
 
 
@@ -223,7 +251,7 @@ def main():
         metric="val_loss",
         mode="min",
         max_t=args.max_epochs,
-        grace_period=8,  # Keep at least 8 epochs before stopping
+        grace_period=min(8, args.max_epochs // 2),  # Adaptive grace period
         reduction_factor=3,  # More aggressive pruning
     )
     
