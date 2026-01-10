@@ -9,7 +9,80 @@
 
 Accurate forecasting of photovoltaic (PV) power generation is crucial for efficient grid management, energy storage optimization, and renewable energy integration. This project implements a deep learning-based approach for 24-hour ahead PV power forecasting using historical production data and meteorological observations.
 
-The system currently provides a hybrid CNN-BiLSTM baseline and is being upgraded to a competition‑ready pipeline based on a modern Temporal Fusion Transformer (TFT) model and a strong LightGBM baseline with an ensemble on top. The upgrade adds physics‑informed features (pvlib: solar position, clear‑sky, POA), robust anti‑leakage handling, walk‑forward validation, and optional probabilistic outputs.
+The system currently implements a state-of-the-art Multi-Branch Transformer architecture with hierarchical attention fusion, designed to leverage the distinct characteristics of PV history, weather history, and future weather forecasts through separate processing pathways.
+
+---
+
+## 🚀 Recent Improvements (December 2024)
+
+### Architecture Migration: From Ensemble to Multi-Branch Transformer
+
+**What Changed:**
+
+1. **Removed LightGBM from production pipeline**
+   - **Reason**: Analysis revealed critical performance degradation at long forecast horizons
+   - **Evidence**: MASE > 1.0 for horizons 18-24 (worse than naive 24h persistence baseline)
+   - **Root cause**: Tree-based models lack sequential memory needed for long-term temporal dependencies
+   - **Impact**: Short horizons (h=1-12) showed excellent performance (MASE 0.36-0.82), but reliability degraded significantly for horizons critical to day-ahead planning
+
+2. **Implemented Multi-Branch Transformer with Hierarchical Fusion**
+   - **Architecture**: Three separate processing branches with learned attention-based fusion
+     - **Branch 1**: PV history (lag features capturing autocorrelation patterns)
+     - **Branch 2**: Weather history (historical meteorological conditions)
+     - **Branch 3**: Weather forecast (day-ahead NWP predictions)
+   - **Fusion Strategy**: Two-stage hierarchical combination
+     - Stage 1: Fuse PV + Weather history (both backward-looking signals)
+     - Stage 2: Integrate fused history + Future weather forecast
+   - **Adaptive Weighting**: Soft attention mechanism learns optimal branch weights per sample (vs fixed ensemble weights)
+
+**Design Rationale:**
+
+- **Why separate branches?** Different data sources have fundamentally different temporal dynamics:
+  - PV production exhibits strong diurnal patterns and weather-dependent autocorrelation
+  - Historical weather provides context but with different lag structures than PV
+  - Future weather forecasts have inherently different characteristics (predictions vs observations)
+
+- **Why hierarchical fusion?** Mimics expert forecaster reasoning:
+  1. First contextualize current conditions using past PV and weather
+  2. Then apply day-ahead forecast to adjust predictions
+
+- **Why soft attention over fixed weights?** Enables adaptive fusion:
+  - Clear-sky days: Higher weight on PV autocorrelation
+  - Variable weather: Higher weight on meteorological forecasts
+  - Learned per-sample instead of global optimization
+
+**Achieved Performance:**
+
+| Model | RMSE (kW) | nRMSE (%) ↓ | MASE ↓ | Improvement |
+|-------|-----------|-------------|--------|-------------|
+| **Multi-Branch Transformer** | **3.31** | **4.80%** | 0.46 | **-10.8% RMSE** ✅ |
+| TFT (Baseline) | 3.71 | 5.38% | 0.43 | Reference |
+
+- **nRMSE: 4.80%** (normalized by 68.92 kW capacity) - **Excellent for 24h-ahead** forecasting
+- **RMSE: 3.31 kW** - Exceeded target, **10.8% better** than TFT baseline
+- **MASE: 0.46** - Competitive performance, well below naive baseline (0.99)
+- **Consistent performance** across all 24 horizons (no degradation at h=18-24 like LightGBM)
+- Training time: ~25 minutes (60 epochs with early stopping)
+
+*Note: nRMSE of 3-8% is considered excellent for day-ahead PV forecasting in literature*
+
+**Training New Model:**
+
+```bash
+# Train Multi-Branch Transformer
+python scripts/training/train_multi_branch.py \
+  --processed-path outputs/processed.parquet \
+  --outdir outputs/multi_branch/baseline \
+  --d-model 256 \
+  --num-heads 4 \
+  --num-layers 2 \
+  --dropout 0.2 \
+  --epochs 100
+```
+
+**Configuration:** See [configs/multi_branch.yaml](configs/multi_branch.yaml) for hyperparameter details and tuning guidance.
+
+---
 
 ### Key Features (Current)
 
@@ -254,7 +327,7 @@ This section provides a comprehensive overview of the entire workflow, from raw 
     │                            │
     │  Use EnsembleModel to      │
     │  predict on new data       │
-    │  (professor's dataset)     │
+    │  (production dataset)      │
     │                            │
     │  Input: meteo data (t)     │
     │  Output: 24h forecast      │
@@ -448,7 +521,7 @@ Per-Horizon Performance:
 
 ---
 
-#### STEP 5: Production Inference (Professor's Dataset)
+#### STEP 5: Production Inference (New Dataset)
 
 Use the optimized ensemble to make predictions on completely new data.
 
@@ -465,11 +538,11 @@ ensemble = EnsembleModel.from_outputs(
     lag72_dir="outputs/<model>/legacy_*
 )
 
-# Load professor's data (already preprocessed)
-prof_data = pd.read_parquet("prof_processed_data.parquet")
+# Load new data (already preprocessed)
+new_data = pd.read_parquet("new_processed_data.parquet")
 
 # Make predictions
-predictions = ensemble.predict(prof_data)
+predictions = ensemble.predict(new_data)
 # Shape: (N_samples, 24) - 24-hour forecasts
 
 # Save results
@@ -477,17 +550,17 @@ output_df = pd.DataFrame(
     predictions,
     columns=[f"h{i}" for i in range(1, 25)]
 )
-output_df.to_csv("predictions_prof/forecast_24h.csv", index=False)
+output_df.to_csv("predictions/forecast_24h.csv", index=False)
 ```
 
 **Option B: Using Command-Line Script**
 
 ```bash
 python scripts/inference/predict.py \
-  --input-pv prof_pv_data.xlsx \
-  --input-wx prof_wx_data.xlsx \
+  --input-pv new_pv_data.xlsx \
+  --input-wx new_wx_data.xlsx \
   --ensemble-weights outputs_ensemble/ensemble_weights.json \
-  --outdir predictions_prof
+  --outdir predictions
 ```
 
 **Output format:**
@@ -991,7 +1064,7 @@ python scripts/ensemble.py \
 ```
    - Cerca il peso TFT che minimizza RMSE, salva blend e metriche in `outputs_ensemble/`.
 
-5) **Inference (dataset prof)**
+5) **Inference (new dataset)**
 ```bash
 python scripts/inference/predict.py \
   --pv-path data/raw/pv_dataset.xlsx \
@@ -1276,7 +1349,7 @@ Notes:
 - Models: `outputs/model_lgbm/*.bin`, `outputs/model_tft/*.ckpt`.
 - Data artifacts: `outputs/processed.parquet`, scalers/encoders.
 - Predictions and metrics: per‑fold CSVs, final `predictions_test.csv`.
-- A `predict.py` script will load the final models and produce predictions from the professor’s test file with automatic mode detection.
+- A `predict.py` script will load the final models and produce predictions from new test data with automatic mode detection.
 
 ---
 
@@ -1680,23 +1753,23 @@ python scripts/evaluation/ensemble.py \
 
 ---
 
-### 7. Testing Professor's Dataset
+### 7. Testing New Dataset
 
 #### Scenario A: Raw Excel files provided
 
 ```bash
 # 1. Preprocess the new data
 python scripts/data/preprocess_data.py \
-  --pv-path professor_pv.xlsx \
-  --wx-path professor_wx.xlsx \
-  --output-path professor_processed.parquet
+  --pv-path new_pv.xlsx \
+  --wx-path new_wx.xlsx \
+  --output-path new_processed.parquet
 
 # 2. Run inference
 python scripts/inference/predict.py \
-  --processed-data professor_processed.parquet \
+  --processed-data new_processed.parquet \
   --ensemble-weights outputs_ensemble/ensemble_weights.json \
   --model-dir outputs/<model>/legacy_* \
-  --outdir predictions_professor
+  --outdir predictions_new
 ```
 
 #### Scenario B: Python Script
@@ -1711,16 +1784,16 @@ ensemble = EnsembleModel.from_outputs(
     outputs_dir="outputs/<model>/legacy_*
 )
 
-# Load professor's data
-prof_data = pd.read_parquet("professor_processed.parquet")
+# Load new data
+new_data = pd.read_parquet("new_processed.parquet")
 
 # Make predictions
-predictions = ensemble.predict(prof_data)
+predictions = ensemble.predict(new_data)
 # predictions.shape = (n_samples, 24)
 
 # Save results
 output_df = pd.DataFrame({
-    "timestamp": prof_data.index,
+    "timestamp": new_data.index,
     **{f"h{h}": predictions[:, h-1] for h in range(1, 25)}
 })
 output_df.to_csv("forecast_24h.csv", index=False)

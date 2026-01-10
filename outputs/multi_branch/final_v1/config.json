@@ -1,0 +1,52 @@
+{
+  "seq_len": 168,
+  "horizon": 24,
+  "d_model": 256,
+  "num_heads": 4,
+  "num_layers": 2,
+  "dim_feedforward": 1024,
+  "dropout": 0.2,
+  "learning_rate": 0.001,
+  "weight_decay": 0.0001,
+  "batch_size": 64,
+  "pv_lag_features": [
+    "pv_lag1",
+    "pv_lag24",
+    "pv_lag168",
+    "pv_roll3h",
+    "pv_roll6h"
+  ],
+  "weather_lag_features": [
+    "ghi_lag1",
+    "ghi_lag24",
+    "ghi_lag168",
+    "dni_lag1",
+    "dni_lag24",
+    "dni_lag168",
+    "dhi_lag1",
+    "dhi_lag24",
+    "dhi_lag168",
+    "ghi_roll3h",
+    "ghi_roll6h",
+    "dni_roll3h",
+    "dni_roll6h"
+  ],
+  "forecast_features": [
+    "temp",
+    "humidity",
+    "wind_speed",
+    "clouds",
+    "ghi",
+    "dni",
+    "dhi",
+    "sp_zenith",
+    "sp_azimuth",
+    "cs_ghi",
+    "cs_dni",
+    "cs_dhi",
+    "hour_sin",
+    "hour_cos",
+    "doy_sin",
+    "doy_cos"
+  ]
+}

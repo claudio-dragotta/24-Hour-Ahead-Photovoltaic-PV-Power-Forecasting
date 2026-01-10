@@ -1,0 +1,94 @@
+# Multi-Branch Transformer Configuration
+# Advanced architecture with separate processing branches for PV history,
+# weather history, and future weather forecasts
+
+data:
+  processed_path: "outputs/processed.parquet"
+  lag_hours: [1, 24, 48, 72, 96, 168]  # Multi-day lags
+  rolling_hours: [3, 6, 12, 24]         # Rolling windows
+  include_solar: true                    # Solar position features
+  include_clearsky: true                 # Clear-sky estimates
+  include_calendar: true                 # Weekend/holiday flags
+
+model:
+  model_type: "multi_branch"
+  horizon: 24
+  seq_len: 168                          # 7-day encoder window
+
+# Multi-Branch Transformer specific settings
+multi_branch:
+  d_model: 256                          # Hidden dimension (256-512 recommended)
+  num_heads: 4                          # Attention heads (4-8 recommended)
+  num_layers: 2                         # Transformer layers per branch (2-3 recommended)
+  dim_feedforward: 1024                 # Feedforward dimension (2-4x d_model)
+  dropout: 0.2                          # Dropout rate (0.1-0.3)
+  learning_rate: 0.001                  # Initial LR (1e-3 to 1e-4)
+  weight_decay: 0.0001                  # L2 regularization
+
+  # Solar-weighted training
+  dayweight_gamma: 1.5                  # Boost daytime hours (>1 reduces night weight)
+  dayweight_min: 0.1                    # Minimum weight for nighttime
+
+  # Metric filtering
+  metrics_zenith_max: 90.0              # Exclude night from metrics (zenith > 90°)
+
+training:
+  epochs: 100
+  batch_size: 64
+  early_stopping_patience: 10
+  train_ratio: 0.6
+  val_ratio: 0.2
+  test_ratio: 0.2
+  seed: 42
+
+# Architecture Design Rationale:
+#
+# 1. Branch Separation:
+#    - PV history: Contains autocorrelation patterns unique to PV production
+#    - Weather history: Historical meteorological conditions
+#    - Weather forecast: Day-ahead predictions (different characteristics)
+#
+#    Rationale: Different data sources have different temporal dynamics and
+#    should be processed independently before fusion.
+#
+# 2. Hierarchical Fusion:
+#    - Stage 1: PV + Weather History (both backward-looking)
+#    - Stage 2: (PV + Weather History) + Weather Forecast (forward-looking)
+#
+#    Rationale: Mimics human reasoning - first contextualize past, then apply forecast.
+#
+# 3. Soft Attention Fusion:
+#    - Learns adaptive weights per sample (not fixed)
+#    - Temperature-scaled softmax for smooth gradients
+#
+#    Rationale: Different weather conditions require different branch weightings
+#    (e.g., cloudy days rely more on forecast than historical patterns).
+#
+# 4. Solar-Weighted Training:
+#    - Higher loss weights during daytime hours
+#    - Night samples still contribute but with reduced importance
+#
+#    Rationale: PV forecasting accuracy matters most when sun is up.
+
+# Hyperparameter Tuning Guide:
+#
+# For SMALL datasets (<20K samples):
+#   - d_model: 128-256
+#   - num_layers: 2
+#   - dropout: 0.2-0.3 (prevent overfitting)
+#
+# For MEDIUM datasets (20K-100K):
+#   - d_model: 256-512
+#   - num_layers: 2-3
+#   - dropout: 0.1-0.2
+#
+# For LARGE datasets (>100K):
+#   - d_model: 512-1024
+#   - num_layers: 3-4
+#   - dropout: 0.1
+
+# Expected Performance:
+# With current dataset (17K samples):
+#   - RMSE: 3.3-3.6 kW (10-15% improvement over single-branch TFT)
+#   - MASE: 0.38-0.42 (vs 0.43 for TFT baseline)
+#   - Training time: ~4-6 hours on GPU (depends on d_model/num_layers)
