@@ -65,13 +65,7 @@ dmypy.json
 # data/raw/*.xlsx
 # data/raw/*.csv
 # data/raw/*.parquet
-data/processed/*.csv
-data/processed/*.parquet
-data/processed/*.xlsx
-data/processed/*.joblib
-
-# Ignore processed data directories (including subfolders)
-data/processed/
+# Previously we ignored processed outputs; keep processed data tracked now.
 
 # Model outputs - Allow trained models for portability
 # outputs/
@@ -92,8 +86,7 @@ lightning_logs/
 tensorboard/
 wandb/
 
-# Ignore outputs folder (plots, saved predictions, etc.)
-outputs/
+# outputs/ removed from gitignore to track generated outputs when desired
 
 # PyTorch Lightning checkpoints
 checkpoints/
