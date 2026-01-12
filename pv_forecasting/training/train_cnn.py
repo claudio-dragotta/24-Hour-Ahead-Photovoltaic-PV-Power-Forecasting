@@ -25,7 +25,7 @@ from ..window import chronological_split, make_windows
 logger = get_logger(__name__)
 
 
-def set_seed(seed: int = 42):
+def set_seed(seed: int = 2):
     """Set random seeds for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)

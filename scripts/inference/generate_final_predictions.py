@@ -1,7 +1,7 @@
-"""Generate Multi-Branch test predictions for ensemble.
+"""Generate final test predictions using the best seed model (seed 2).
 
-This script loads the trained Multi-Branch model and generates predictions
-on the test set, saving them in the same format as TFT for ensemble combination.
+This script loads the trained Multi-Branch model (seed 2) and generates predictions
+on the test set, saving them as CSV for analysis.
 """
 
 import json
@@ -17,6 +17,33 @@ from pv_forecasting.logger import get_logger
 from pv_forecasting.models.multi_branch_tft import MultiBranchTransformer
 
 logger = get_logger(__name__)
+
+
+def compute_rmse(y_true, y_pred):
+    """Calculate RMSE."""
+    return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+
+
+def compute_mase(y_true, y_pred, seasonality=24):
+    """Calculate MASE using naive seasonal forecast as baseline."""
+    # For simplicity, compute MASE based on test set's own seasonal pattern
+    y_true_flat = y_true.flatten()
+    y_pred_flat = y_pred.flatten()
+
+    # MAE of model
+    mae_model = np.mean(np.abs(y_true_flat - y_pred_flat))
+
+    # MAE of naive seasonal forecast (y[t] = y[t-24])
+    if len(y_true_flat) > seasonality:
+        naive_errors = np.abs(y_true_flat[seasonality:] - y_true_flat[:-seasonality])
+        mae_naive = np.mean(naive_errors)
+    else:
+        mae_naive = np.mean(np.abs(y_true_flat))
+
+    if mae_naive == 0:
+        return np.nan
+
+    return float(mae_model / mae_naive)
 
 
 class PVForecastingDataset(torch.utils.data.Dataset):
@@ -87,17 +114,17 @@ class PVForecastingDataset(torch.utils.data.Dataset):
 
 
 def generate_predictions():
-    """Generate Multi-Branch test predictions."""
-    logger.info("Generating Multi-Branch test predictions for ensemble")
+    """Generate final test predictions with seed 2 model."""
+    logger.info("=" * 60)
+    logger.info("Generating FINAL predictions with Multi-Branch (seed 2)")
+    logger.info("=" * 60)
 
     # Paths
-    model_dir = Path("outputs/multi_branch/final_v1")
+    model_dir = Path("outputs/multi_branch/final_seed2")
     data_path = Path("outputs/processed.parquet")
-    output_dir = Path("outputs/ensemble")
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load config
-    with open(model_dir / "config.json") as f:
+    # Load model config
+    with open(model_dir / "config_model.json") as f:
         config = json.load(f)
 
     # Load scalers
@@ -108,14 +135,14 @@ def generate_predictions():
     logger.info(f"Loading data from {data_path}")
     df = pd.read_parquet(data_path)
 
-    # Split (same as training)
+    # Split (same as training: 60/20/20)
     n_samples = len(df)
     train_ratio = 0.6
     val_ratio = 0.2
     cutoff_train = int(n_samples * train_ratio)
     cutoff_val = int(n_samples * (train_ratio + val_ratio))
 
-    test_df = df.iloc[cutoff_val:]
+    test_df = df.iloc[cutoff_val:].copy()
     logger.info(f"Test set: {len(test_df)} samples")
 
     # Create dataset
@@ -150,6 +177,7 @@ def generate_predictions():
     all_preds = []
     all_targets = []
 
+    logger.info("Running inference...")
     with torch.no_grad():
         for batch in test_loader:
             features, targets = batch
@@ -166,21 +194,69 @@ def generate_predictions():
     all_preds = scalers["target_scaler"].inverse_transform(all_preds)
     all_targets = scalers["target_scaler"].inverse_transform(all_targets)
 
-    # Save in TFT format (long format)
-    logger.info("Saving predictions in long format")
+    # Calculate metrics
+    logger.info("\n" + "=" * 60)
+    logger.info("FINAL METRICS (Test Set)")
+    logger.info("=" * 60)
+
+    rmse = compute_rmse(all_targets.flatten(), all_preds.flatten())
+    mase = compute_mase(all_targets, all_preds, seasonality=24)
+
+    logger.info(f"RMSE: {rmse:.4f} kW")
+    logger.info(f"MASE: {mase:.4f}")
+
+    # Per-horizon metrics
+    logger.info("\nPer-Horizon Metrics:")
+    logger.info("-" * 40)
+    horizon_metrics = []
+    for h in range(24):
+        h_rmse = compute_rmse(all_targets[:, h], all_preds[:, h])
+        h_mase = compute_mase(all_targets[:, h : h + 1], all_preds[:, h : h + 1], seasonality=24)
+        horizon_metrics.append({"horizon": h + 1, "rmse": h_rmse, "mase": h_mase})
+        logger.info(f"  h={h+1:2d}: RMSE={h_rmse:.3f}, MASE={h_mase:.3f}")
+
+    # Save predictions - Wide format (one row per sample)
+    logger.info("\nSaving predictions (wide format)...")
+    pred_cols = {f"pred_h{h+1}": all_preds[:, h] for h in range(24)}
+    target_cols = {f"actual_h{h+1}": all_targets[:, h] for h in range(24)}
+
+    pred_df_wide = pd.DataFrame({**pred_cols, **target_cols})
+    output_path_wide = model_dir / "predictions_test_wide.csv"
+    pred_df_wide.to_csv(output_path_wide, index=False)
+    logger.info(f"Saved: {output_path_wide}")
+
+    # Save predictions - Long format (for plotting)
+    logger.info("Saving predictions (long format)...")
     predictions_list = []
     for i in range(len(all_preds)):
         for h in range(24):
             predictions_list.append(
-                {"sample_idx": i, "horizon": h + 1, "prediction": all_preds[i, h], "target": all_targets[i, h]}
+                {"sample_idx": i, "horizon": h + 1, "prediction": all_preds[i, h], "actual": all_targets[i, h]}
             )
 
-    pred_df = pd.DataFrame(predictions_list)
-    output_path = output_dir / "predictions_test_multi_branch.csv"
-    pred_df.to_csv(output_path, index=False)
-    logger.info(f"Saved {len(pred_df)} predictions to {output_path}")
+    pred_df_long = pd.DataFrame(predictions_list)
+    output_path_long = model_dir / "predictions_test_long.csv"
+    pred_df_long.to_csv(output_path_long, index=False)
+    logger.info(f"Saved: {output_path_long}")
 
-    logger.info(f"✅ Multi-Branch predictions generated: {len(all_preds)} samples × 24 horizons")
+    # Save metrics
+    metrics_summary = {
+        "model": "Multi-Branch Transformer",
+        "seed": 2,
+        "rmse": float(rmse),
+        "mase": float(mase),
+        "n_samples": len(all_preds),
+        "horizon_metrics": horizon_metrics,
+    }
+
+    with open(model_dir / "metrics_final.json", "w") as f:
+        json.dump(metrics_summary, f, indent=2)
+    logger.info(f"Saved: {model_dir / 'metrics_final.json'}")
+
+    logger.info("\n" + "=" * 60)
+    logger.info(f"✅ DONE! Generated {len(all_preds)} predictions × 24 horizons")
+    logger.info(f"   RMSE: {rmse:.4f} kW | MASE: {mase:.4f}")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":

@@ -125,7 +125,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--train-ratio", type=float, default=0.6, help="training set ratio (chronological split)")
     ap.add_argument("--val-ratio", type=float, default=0.2, help="validation set ratio (chronological split)")
     ap.add_argument("--test-ratio", type=float, default=0.2, help="test set ratio (chronological split)")
-    ap.add_argument("--seed", type=int, default=42, help="random seed for reproducibility")
+    ap.add_argument("--seed", type=int, default=2, help="random seed for reproducibility")
     return ap.parse_args()
 
 

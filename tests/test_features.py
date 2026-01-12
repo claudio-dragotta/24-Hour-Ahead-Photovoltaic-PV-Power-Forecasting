@@ -157,7 +157,7 @@ class TestSolarPosition:
 
     def test_solar_position_requires_timezone(self):
         """Test that solar position requires timezone-aware index."""
-        df = pd.DataFrame({"pv": [1, 2, 3]}, index=pd.date_range("2010-01-01", periods=3, freq="H"))
+        df = pd.DataFrame({"pv": [1, 2, 3]}, index=pd.date_range("2010-01-01", periods=3, freq="h"))
         with pytest.raises(ValueError, match="timezone-aware"):
             add_solar_position(df, lat=-33.86, lon=151.21)
 
@@ -206,7 +206,7 @@ class TestClearnessIndex:
 
     def test_kc_with_zero_clearsky(self):
         """Test kc behavior when clearsky is zero (night time)."""
-        dates = pd.date_range("2010-01-01", periods=10, freq="H", tz="UTC")
+        dates = pd.date_range("2010-01-01", periods=10, freq="h", tz="UTC")
         df = pd.DataFrame({"ghi": [100] * 10, "cs_ghi": [0] * 10}, index=dates)
 
         result = add_kc(df, ghi_col="ghi")

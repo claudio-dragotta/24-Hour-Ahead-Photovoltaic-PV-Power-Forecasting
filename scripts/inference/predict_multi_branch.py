@@ -31,44 +31,18 @@ logger = get_logger(__name__)
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     ap = argparse.ArgumentParser(description="Multi-Branch Transformer Inference")
+    ap.add_argument("--checkpoint", type=str, required=True, help="Path to trained model checkpoint (.ckpt file)")
+    ap.add_argument("--processed-data", type=str, required=True, help="Path to processed parquet file with features")
+    ap.add_argument("--outdir", type=str, default="predictions_multi_branch", help="Output directory for predictions")
+    ap.add_argument("--batch-size", type=int, default=64, help="Batch size for inference")
     ap.add_argument(
-        "--checkpoint",
-        type=str,
-        required=True,
-        help="Path to trained model checkpoint (.ckpt file)"
-    )
-    ap.add_argument(
-        "--processed-data",
-        type=str,
-        required=True,
-        help="Path to processed parquet file with features"
-    )
-    ap.add_argument(
-        "--outdir",
-        type=str,
-        default="predictions_multi_branch",
-        help="Output directory for predictions"
-    )
-    ap.add_argument(
-        "--batch-size",
-        type=int,
-        default=64,
-        help="Batch size for inference"
-    )
-    ap.add_argument(
-        "--device",
-        type=str,
-        default="auto",
-        choices=["auto", "cpu", "cuda"],
-        help="Device to run inference on"
+        "--device", type=str, default="auto", choices=["auto", "cpu", "cuda"], help="Device to run inference on"
     )
     return ap.parse_args()
 
 
 def prepare_features(
-    df: pd.DataFrame,
-    seq_len: int = 168,
-    horizon: int = 24
+    df: pd.DataFrame, seq_len: int = 168, horizon: int = 24
 ) -> tuple[List[Dict[str, np.ndarray]], List[int]]:
     """Prepare input features for model inference.
 
@@ -83,23 +57,48 @@ def prepare_features(
         for each valid window.
     """
     # Define feature groups
-    pv_lag_features = [c for c in df.columns if c.startswith('pv_lag') or c.startswith('pv_roll')]
+    pv_lag_features = [c for c in df.columns if c.startswith("pv_lag") or c.startswith("pv_roll")]
     weather_lag_features = [
-        c for c in df.columns
-        if (c.startswith('ghi_lag') or c.startswith('dni_lag') or c.startswith('dhi_lag') or
-            ('roll' in c and not c.startswith('pv_roll')) or
-            ('var' in c and not c.startswith('pv_var')))
+        c
+        for c in df.columns
+        if (
+            c.startswith("ghi_lag")
+            or c.startswith("dni_lag")
+            or c.startswith("dhi_lag")
+            or ("roll" in c and not c.startswith("pv_roll"))
+            or ("var" in c and not c.startswith("pv_var"))
+        )
     ]
     forecast_features = [
-        c for c in ['temp', 'humidity', 'wind_speed', 'clouds', 'ghi', 'dni', 'dhi',
-                    'sp_zenith', 'sp_azimuth', 'cs_ghi', 'cs_dni', 'cs_dhi',
-                    'hour_sin', 'hour_cos', 'doy_sin', 'doy_cos', 'is_weekend', 'is_holiday']
+        c
+        for c in [
+            "temp",
+            "humidity",
+            "wind_speed",
+            "clouds",
+            "ghi",
+            "dni",
+            "dhi",
+            "sp_zenith",
+            "sp_azimuth",
+            "cs_ghi",
+            "cs_dni",
+            "cs_dhi",
+            "hour_sin",
+            "hour_cos",
+            "doy_sin",
+            "doy_cos",
+            "is_weekend",
+            "is_holiday",
+        ]
         if c in df.columns
     ]
 
-    logger.info(f"Feature groups: PV lags={len(pv_lag_features)}, "
-                f"Weather lags={len(weather_lag_features)}, "
-                f"Forecast={len(forecast_features)}")
+    logger.info(
+        f"Feature groups: PV lags={len(pv_lag_features)}, "
+        f"Weather lags={len(weather_lag_features)}, "
+        f"Forecast={len(forecast_features)}"
+    )
 
     # Create sliding windows
     features_list = []
@@ -117,14 +116,14 @@ def prepare_features(
             break
 
         # Extract features for each branch
-        pv_history = df_reset.loc[start_idx:end_idx-1, pv_lag_features].values
-        weather_history = df_reset.loc[start_idx:end_idx-1, weather_lag_features].values
-        weather_forecast = df_reset.loc[forecast_start:forecast_end-1, forecast_features].values
+        pv_history = df_reset.loc[start_idx : end_idx - 1, pv_lag_features].values
+        weather_history = df_reset.loc[start_idx : end_idx - 1, weather_lag_features].values
+        weather_forecast = df_reset.loc[forecast_start : forecast_end - 1, forecast_features].values
 
         features = {
-            'pv_history': pv_history.astype(np.float32),
-            'weather_history': weather_history.astype(np.float32),
-            'weather_forecast': weather_forecast.astype(np.float32)
+            "pv_history": pv_history.astype(np.float32),
+            "weather_history": weather_history.astype(np.float32),
+            "weather_forecast": weather_forecast.astype(np.float32),
         }
 
         features_list.append(features)
@@ -185,20 +184,18 @@ def main() -> None:
             batch_features = features_list[start_idx:end_idx]
 
             # Stack batch
-            pv_batch = torch.from_numpy(
-                np.stack([f['pv_history'] for f in batch_features], axis=0)
-            ).to(device)
-            weather_hist_batch = torch.from_numpy(
-                np.stack([f['weather_history'] for f in batch_features], axis=0)
-            ).to(device)
-            weather_fcst_batch = torch.from_numpy(
-                np.stack([f['weather_forecast'] for f in batch_features], axis=0)
-            ).to(device)
+            pv_batch = torch.from_numpy(np.stack([f["pv_history"] for f in batch_features], axis=0)).to(device)
+            weather_hist_batch = torch.from_numpy(np.stack([f["weather_history"] for f in batch_features], axis=0)).to(
+                device
+            )
+            weather_fcst_batch = torch.from_numpy(np.stack([f["weather_forecast"] for f in batch_features], axis=0)).to(
+                device
+            )
 
             batch_dict = {
-                'pv_history': pv_batch,
-                'weather_history': weather_hist_batch,
-                'weather_forecast': weather_fcst_batch
+                "pv_history": pv_batch,
+                "weather_history": weather_hist_batch,
+                "weather_forecast": weather_fcst_batch,
             }
 
             # Predict
@@ -223,15 +220,17 @@ def main() -> None:
                 y_pred = all_predictions[i, h - 1]
 
                 # Also include ground truth if available
-                y_true = df.iloc[forecast_idx]['pv'] if 'pv' in df.columns else None
+                y_true = df.iloc[forecast_idx]["pv"] if "pv" in df.columns else None
 
-                rows.append({
-                    'origin_timestamp_utc': origin_timestamp.isoformat(),
-                    'forecast_timestamp_utc': forecast_timestamp.isoformat(),
-                    'horizon_h': h,
-                    'y_pred': float(y_pred),
-                    'y_true': float(y_true) if y_true is not None else None
-                })
+                rows.append(
+                    {
+                        "origin_timestamp_utc": origin_timestamp.isoformat(),
+                        "forecast_timestamp_utc": forecast_timestamp.isoformat(),
+                        "horizon_h": h,
+                        "y_pred": float(y_pred),
+                        "y_true": float(y_true) if y_true is not None else None,
+                    }
+                )
 
     pred_df = pd.DataFrame(rows)
 
@@ -241,26 +240,26 @@ def main() -> None:
     logger.info(f"Saved predictions to {output_path}")
 
     # Compute summary statistics if ground truth available
-    if 'y_true' in pred_df.columns and pred_df['y_true'].notna().any():
-        valid_mask = pred_df['y_true'].notna()
-        y_true = pred_df.loc[valid_mask, 'y_true'].values
-        y_pred = pred_df.loc[valid_mask, 'y_pred'].values
+    if "y_true" in pred_df.columns and pred_df["y_true"].notna().any():
+        valid_mask = pred_df["y_true"].notna()
+        y_true = pred_df.loc[valid_mask, "y_true"].values
+        y_pred = pred_df.loc[valid_mask, "y_pred"].values
 
-        from pv_forecasting.metrics import rmse, mase
+        from pv_forecasting.metrics import mase, rmse
 
         # Compute metrics (use simple train series for MASE baseline)
-        train_series = df['pv'].values[:int(len(df) * 0.6)]
+        train_series = df["pv"].values[: int(len(df) * 0.6)]
 
         metrics = {
-            'rmse': float(rmse(y_true, y_pred)),
-            'mae': float(np.mean(np.abs(y_true - y_pred))),
-            'mape': float(np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100),
-            'mase': float(mase(y_true, y_pred, train_series, m=24)),
-            'num_predictions': len(y_true)
+            "rmse": float(rmse(y_true, y_pred)),
+            "mae": float(np.mean(np.abs(y_true - y_pred))),
+            "mape": float(np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100),
+            "mase": float(mase(y_true, y_pred, train_series, m=24)),
+            "num_predictions": len(y_true),
         }
 
         metrics_path = out_dir / "metrics_summary.json"
-        with open(metrics_path, 'w') as f:
+        with open(metrics_path, "w") as f:
             json.dump(metrics, indent=2, fp=f)
 
         logger.info(f"Metrics summary:")

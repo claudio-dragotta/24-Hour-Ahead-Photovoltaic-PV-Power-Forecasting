@@ -5,12 +5,12 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 
 def setup_logger(
     name: str = "pv_forecasting",
-    level: int = logging.INFO,
+    level: Union[int, str] = logging.INFO,
     log_file: Optional[Path] = None,
     format_string: Optional[str] = None,
 ) -> logging.Logger:
@@ -35,6 +35,10 @@ def setup_logger(
     # Avoid adding handlers multiple times
     if logger.handlers:
         return logger
+
+    # Allow passing a string like 'DEBUG' or an int logging level
+    if isinstance(level, str):
+        level = getattr(logging, level.upper(), logging.INFO)
 
     logger.setLevel(level)
 

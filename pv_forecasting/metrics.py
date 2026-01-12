@@ -123,9 +123,9 @@ def mase(y_true_flat: np.ndarray, y_pred_flat: np.ndarray, train_series: np.ndar
 
     if denom == 0:
         # Training series has no seasonal variation (constant or all zeros)
-        return np.nan
+        return float("nan")
 
     # Compute model's mean absolute error on test data
-    err = np.mean(np.abs(y_true_flat - y_pred_flat))
+    err = float(np.mean(np.abs(y_true_flat - y_pred_flat)))
 
     return float(err / denom)

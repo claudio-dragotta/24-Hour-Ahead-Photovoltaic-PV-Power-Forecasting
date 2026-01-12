@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import joblib
+import numpy as _np
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from numpy.typing import NDArray
 
 
 class EnsembleModel:
@@ -27,7 +29,7 @@ class EnsembleModel:
         >>> predictions = ensemble.predict(input_data)
     """
 
-    def __init__(self, models: Dict[str, any], weights: Dict[str, float], scalers: Dict[str, any] = None):
+    def __init__(self, models: Dict[str, Any], weights: Dict[str, float], scalers: Optional[Dict[str, Any]] = None):
         """Initialize ensemble model.
 
         Args:
@@ -35,9 +37,9 @@ class EnsembleModel:
             weights: Dictionary mapping model names to ensemble weights.
             scalers: Optional dictionary of feature scalers per model.
         """
-        self.models = models
-        self.weights = weights
-        self.scalers = scalers or {}
+        self.models: Dict[str, Any] = models
+        self.weights: Dict[str, float] = weights
+        self.scalers: Dict[str, Any] = scalers or {}
 
         # Validate weights sum to 1.0
         total_weight = sum(weights.values())
@@ -82,8 +84,8 @@ class EnsembleModel:
         print(f"[EnsembleModel] loading {len(model_names)} models...")
 
         # Load models
-        models = {}
-        scalers = {}
+        models: Dict[str, Any] = {}
+        scalers: Dict[str, Any] = {}
 
         for model_name in model_names:
             # Determine model type (supports both simple and old naming)
@@ -132,7 +134,7 @@ class EnsembleModel:
 
     def predict(
         self, X: pd.DataFrame | np.ndarray, return_individual: bool = False
-    ) -> np.ndarray | Dict[str, np.ndarray]:
+    ) -> NDArray[_np.float64] | Dict[str, NDArray[_np.float64]]:
         """Make predictions using the ensemble.
 
         Args:
@@ -147,7 +149,7 @@ class EnsembleModel:
             >>> predictions.shape
             (100, 24)  # 100 samples, 24 horizons
         """
-        predictions = {}
+        predictions: Dict[str, NDArray[_np.float64]] = {}
 
         for model_name, model in self.models.items():
             if model is None:
@@ -155,7 +157,7 @@ class EnsembleModel:
 
             if "LightGBM" in model_name:
                 # LightGBM: 24 independent models
-                preds_h = []
+                preds_h: List[NDArray[_np.float64]] = []
                 for h, lgbm_model in enumerate(model, start=1):
                     pred = lgbm_model.predict(X)
                     preds_h.append(pred)

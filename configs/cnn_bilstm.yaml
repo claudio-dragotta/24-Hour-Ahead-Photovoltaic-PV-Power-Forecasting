@@ -2,10 +2,10 @@
 # Optimized for sequence-to-sequence deep learning model
 
 data:
-  pv_path: "data/raw/pv_dataset.xlsx"
-  wx_path: "data/raw/wx_dataset.xlsx"
-  local_tz: "Australia/Sydney"
-  processed_dir: "data/processed"
+  pv_path: data/raw/pv_dataset.xlsx
+  wx_path: data/raw/wx_dataset.xlsx
+  local_tz: Australia/Sydney
+  processed_dir: data/processed
   lag_hours: [1, 24, 168]   # Recent + daily + weekly patterns
   rolling_hours: [3, 6]      # Short-term moving averages
   include_solar: true
@@ -13,7 +13,7 @@ data:
   dropna: true
 
 model:
-  model_type: "cnn_bilstm"
+  model_type: cnn_bilstm
   horizon: 24                # 24-hour ahead forecast
   seq_len: 168               # 7-day (1 week) lookback
   epochs: 100                # Increased for deep learning
@@ -21,14 +21,14 @@ model:
   learning_rate: 0.001       # Adam optimizer default
   train_ratio: 0.7
   val_ratio: 0.1
-  seed: 42
+  seed: 2
   early_stopping_patience: 15  # More patience for CNN-BiLSTM
   use_future_meteo: true       # Use future weather as features (simulated NWP)
-  future_cols: ["ghi", "dni", "dhi", "temp", "humidity", "clouds_all", "wind_speed"]
+  future_cols: [ghi, dni, dhi, temp, humidity, clouds_all, wind_speed]
 
 output:
-  output_dir: "outputs/cnn_bilstm"
+  output_dir: outputs/cnn_bilstm
   save_predictions: true
   save_model: true
   save_history: true
-  log_level: "INFO"
+  log_level: INFO

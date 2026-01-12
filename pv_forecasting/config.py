@@ -49,7 +49,8 @@ class ModelConfig:
     learning_rate: float = 1e-3
     train_ratio: float = 0.7
     val_ratio: float = 0.1
-    seed: int = 42
+    seed: int = 2
+
     early_stopping_patience: int = 8
 
 
