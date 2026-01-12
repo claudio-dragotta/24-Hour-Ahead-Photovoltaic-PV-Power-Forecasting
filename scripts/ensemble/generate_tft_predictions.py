@@ -22,9 +22,20 @@ logger = get_logger(__name__)
 class TFTDataset(torch.utils.data.Dataset):
     """Dataset for TFT inference."""
 
-    def __init__(self, df, static_features, temporal_past_features, temporal_future_features,
-                 target_col, seq_len, horizon, static_scaler, temporal_past_scaler,
-                 temporal_future_scaler, target_scaler):
+    def __init__(
+        self,
+        df,
+        static_features,
+        temporal_past_features,
+        temporal_future_features,
+        target_col,
+        seq_len,
+        horizon,
+        static_scaler,
+        temporal_past_scaler,
+        temporal_future_scaler,
+        target_scaler,
+    ):
         self.df = df.reset_index(drop=True)
         self.static_features = static_features
         self.temporal_past_features = temporal_past_features
@@ -55,13 +66,15 @@ class TFTDataset(torch.utils.data.Dataset):
         static = self.df.loc[start_idx, self.static_features].values.astype(np.float32)
 
         # Temporal past
-        temporal_past = self.df.loc[start_idx:end_idx-1, self.temporal_past_features].values.astype(np.float32)
+        temporal_past = self.df.loc[start_idx : end_idx - 1, self.temporal_past_features].values.astype(np.float32)
 
         # Temporal future
-        temporal_future = self.df.loc[target_start:target_end-1, self.temporal_future_features].values.astype(np.float32)
+        temporal_future = self.df.loc[target_start : target_end - 1, self.temporal_future_features].values.astype(
+            np.float32
+        )
 
         # Targets
-        targets = self.df.loc[target_start:target_end-1, self.target_col].values.astype(np.float32)
+        targets = self.df.loc[target_start : target_end - 1, self.target_col].values.astype(np.float32)
 
         # Apply scaling
         if self.static_scaler is not None:
@@ -74,9 +87,9 @@ class TFTDataset(torch.utils.data.Dataset):
             targets = self.target_scaler.transform(targets.reshape(-1, 1)).flatten()
 
         features = {
-            'static': torch.from_numpy(static),
-            'temporal_past': torch.from_numpy(temporal_past),
-            'temporal_future': torch.from_numpy(temporal_future)
+            "static": torch.from_numpy(static),
+            "temporal_past": torch.from_numpy(temporal_past),
+            "temporal_future": torch.from_numpy(temporal_future),
         }
         targets = torch.from_numpy(targets)
 
@@ -118,16 +131,16 @@ def generate_predictions():
     # Create dataset
     test_dataset = TFTDataset(
         test_df,
-        config['static_features'],
-        config['temporal_past_features'],
-        config['temporal_future_features'],
-        'pv',
-        config['seq_len'],
-        config['horizon'],
-        scalers.get('static_scaler'),
-        scalers.get('temporal_past_scaler'),
-        scalers.get('temporal_future_scaler'),
-        scalers['target_scaler']
+        config["static_features"],
+        config["temporal_past_features"],
+        config["temporal_future_features"],
+        "pv",
+        config["seq_len"],
+        config["horizon"],
+        scalers.get("static_scaler"),
+        scalers.get("temporal_past_scaler"),
+        scalers.get("temporal_future_scaler"),
+        scalers["target_scaler"],
     )
 
     test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
@@ -160,20 +173,17 @@ def generate_predictions():
 
     # Denormalize
     logger.info("Denormalizing predictions")
-    all_preds = scalers['target_scaler'].inverse_transform(all_preds)
-    all_targets = scalers['target_scaler'].inverse_transform(all_targets)
+    all_preds = scalers["target_scaler"].inverse_transform(all_preds)
+    all_targets = scalers["target_scaler"].inverse_transform(all_targets)
 
     # Save in same format as Multi-Branch
     logger.info("Saving predictions in long format")
     predictions_list = []
     for i in range(len(all_preds)):
         for h in range(24):
-            predictions_list.append({
-                'sample_idx': i,
-                'horizon': h + 1,
-                'prediction': all_preds[i, h],
-                'target': all_targets[i, h]
-            })
+            predictions_list.append(
+                {"sample_idx": i, "horizon": h + 1, "prediction": all_preds[i, h], "target": all_targets[i, h]}
+            )
 
     pred_df = pd.DataFrame(predictions_list)
     output_path = output_dir / "predictions_test_tft_aligned.csv"

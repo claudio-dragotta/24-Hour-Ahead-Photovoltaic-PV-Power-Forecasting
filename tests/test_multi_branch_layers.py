@@ -206,16 +206,14 @@ class TestPositionalEncoding:
             for i in range(0, d_model, 2):
                 expected = np.sin(pos / (10000 ** (i / d_model)))
                 actual = pe[pos, i]
-                assert np.isclose(expected, actual, atol=1e-5), \
-                    f"Sine pattern mismatch at pos={pos}, dim={i}"
+                assert np.isclose(expected, actual, atol=1e-5), f"Sine pattern mismatch at pos={pos}, dim={i}"
 
         # Check cosine pattern on odd indices
         for pos in [0, 10, 50, 100]:
             for i in range(1, d_model, 2):
-                expected = np.cos(pos / (10000 ** ((i-1) / d_model)))
+                expected = np.cos(pos / (10000 ** ((i - 1) / d_model)))
                 actual = pe[pos, i]
-                assert np.isclose(expected, actual, atol=1e-5), \
-                    f"Cosine pattern mismatch at pos={pos}, dim={i}"
+                assert np.isclose(expected, actual, atol=1e-5), f"Cosine pattern mismatch at pos={pos}, dim={i}"
 
     def test_different_positions_different_encodings(self):
         """Test that different positions have different encodings."""

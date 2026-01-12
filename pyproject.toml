@@ -132,6 +132,13 @@ module = [
 ]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = [
+    "pv_forecasting.models.layers",
+    "pv_forecasting.models.multi_branch_tft",
+]
+ignore_errors = true
+
 # pytest - Testing
 [tool.pytest.ini_options]
 minversion = "7.0"

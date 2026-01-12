@@ -12,7 +12,7 @@ if ps aux | grep -q "[t]ft_parallel"; then
     echo "✅ Random search is RUNNING"
     PID=$(ps aux | grep "[t]ft_parallel" | awk '{print $2}')
     echo "   PID: $PID"
-    
+
     # Get runtime
     RUNTIME=$(ps -p $PID -o etime= | tr -d ' ')
     echo "   Runtime: $RUNTIME"

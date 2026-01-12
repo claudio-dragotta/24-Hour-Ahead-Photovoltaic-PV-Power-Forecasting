@@ -6,8 +6,6 @@ The architecture uses hierarchical soft attention fusion to combine information
 from different data sources adaptively.
 """
 
-from __future__ import annotations
-
 from typing import Dict, List
 
 import torch
@@ -105,9 +103,9 @@ class MultiBranchTransformer(LightningModule):
             nhead=num_heads,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
-            activation='relu',
+            activation="relu",
             batch_first=True,
-            norm_first=True  # Pre-normalization for better stability
+            norm_first=True,  # Pre-normalization for better stability
         )
         self.pv_transformer = nn.TransformerEncoder(pv_encoder_layer, num_layers=num_layers)
 
@@ -120,9 +118,9 @@ class MultiBranchTransformer(LightningModule):
             nhead=num_heads,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
-            activation='relu',
+            activation="relu",
             batch_first=True,
-            norm_first=True
+            norm_first=True,
         )
         self.weather_hist_transformer = nn.TransformerEncoder(weather_hist_encoder_layer, num_layers=num_layers)
 
@@ -135,9 +133,9 @@ class MultiBranchTransformer(LightningModule):
             nhead=num_heads,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
-            activation='relu',
+            activation="relu",
             batch_first=True,
-            norm_first=True
+            norm_first=True,
         )
         self.weather_forecast_transformer = nn.TransformerEncoder(weather_forecast_encoder_layer, num_layers=num_layers)
 
@@ -150,11 +148,7 @@ class MultiBranchTransformer(LightningModule):
         # Hierarchical Fusion with Soft Attention
         # Stage 1: Fuse PV history + Weather history (both backward-looking)
         self.fusion_stage1 = SoftAttention(input_dim=d_model, hidden_dim=d_model, temperature=1.0)
-        self.fc_stage1 = nn.Sequential(
-            nn.Dropout(p=dropout),
-            nn.Linear(d_model, d_model),
-            nn.ReLU()
-        )
+        self.fc_stage1 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(d_model, d_model), nn.ReLU())
 
         # Stage 2: Fuse (PV + Weather history) + Future weather forecast
         self.fusion_stage2 = SoftAttention(input_dim=d_model, hidden_dim=d_model, temperature=1.0)
@@ -163,7 +157,7 @@ class MultiBranchTransformer(LightningModule):
             nn.Linear(d_model, d_model),
             nn.ReLU(),
             nn.Dropout(p=dropout),
-            nn.Linear(d_model, seq_len_decoder)  # 24-hour forecast (no activation for normalized targets)
+            nn.Linear(d_model, seq_len_decoder),  # 24-hour forecast (no activation for normalized targets)
         )
 
     def forward(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -178,9 +172,9 @@ class MultiBranchTransformer(LightningModule):
         Returns:
             Tensor of shape (batch_size, seq_len_decoder) with PV power predictions.
         """
-        pv_hist = batch['pv_history']  # (B, T_enc, F_pv)
-        weather_hist = batch['weather_history']  # (B, T_enc, F_wx_hist)
-        weather_fcst = batch['weather_forecast']  # (B, T_dec, F_wx_fcst)
+        pv_hist = batch["pv_history"]  # (B, T_enc, F_pv)
+        weather_hist = batch["weather_history"]  # (B, T_enc, F_wx_hist)
+        weather_fcst = batch["weather_forecast"]  # (B, T_dec, F_wx_fcst)
 
         # Branch 1: Process PV history
         pv_emb = self.pv_embedding(pv_hist)  # (B, T_enc, d_model)
@@ -214,6 +208,7 @@ class MultiBranchTransformer(LightningModule):
 
         # Final output: 24-hour forecast
         output = self.fc_output(fusion2_output)  # (B, 24)
+        output = torch.sigmoid(output)  # Constrain to [0, 1] for normalized PV
 
         return output
 
@@ -232,7 +227,7 @@ class MultiBranchTransformer(LightningModule):
         features, targets = batch
         predictions = self(features)
         loss = nn.functional.mse_loss(predictions, targets)
-        self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch: tuple, batch_idx: int) -> torch.Tensor:
@@ -248,7 +243,7 @@ class MultiBranchTransformer(LightningModule):
         features, targets = batch
         predictions = self(features)
         loss = nn.functional.mse_loss(predictions, targets)
-        self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def test_step(self, batch: tuple, batch_idx: int) -> torch.Tensor:
@@ -264,7 +259,7 @@ class MultiBranchTransformer(LightningModule):
         features, targets = batch
         predictions = self(features)
         loss = nn.functional.mse_loss(predictions, targets)
-        self.log('test_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def configure_optimizers(self):
@@ -273,25 +268,9 @@ class MultiBranchTransformer(LightningModule):
         Returns:
             Optimizer and scheduler configuration dictionary.
         """
-        optimizer = optim.Adam(
-            self.parameters(),
-            lr=self.learning_rate,
-            weight_decay=self.weight_decay
-        )
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            mode='min',
-            factor=0.2,
-            patience=10,
-            min_lr=5e-5
-        )
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "monitor": "val_loss"
-            }
-        }
+        optimizer = optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.2, patience=10, min_lr=5e-5)
+        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "monitor": "val_loss"}}
 
     def predict_step(self, batch: tuple, batch_idx: int) -> torch.Tensor:
         """Prediction step for inference.
@@ -307,4 +286,4 @@ class MultiBranchTransformer(LightningModule):
             features, _ = batch
         else:
             features = batch
-        return self(features)
+        return self(features)  # type: ignore[unreachable]

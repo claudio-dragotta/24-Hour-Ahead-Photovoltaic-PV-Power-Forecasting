@@ -11,8 +11,4 @@ This module provides different model architectures:
 from .cnn_bilstm import build_cnn_bilstm, build_cnn_bilstm_fusion_attention
 from .multi_branch_tft import MultiBranchTransformer
 
-__all__ = [
-    "build_cnn_bilstm",
-    "build_cnn_bilstm_fusion_attention",
-    "MultiBranchTransformer"
-]
+__all__ = ["build_cnn_bilstm", "build_cnn_bilstm_fusion_attention", "MultiBranchTransformer"]

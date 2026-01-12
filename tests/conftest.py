@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,11 +10,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
+try:
+    import torch
+except ImportError:  # pragma: no cover - torch may not be installed in minimal envs
+    torch = None
+
 
 @pytest.fixture
 def sample_pv_data() -> pd.DataFrame:
     """Create sample PV production data with UTC timezone."""
-    dates = pd.date_range("2010-01-01", periods=100, freq="H", tz="UTC")
+    dates = pd.date_range("2010-01-01", periods=100, freq="h", tz="UTC")
     pv_values = np.random.rand(100) * 0.8  # Normalized PV values
     return pd.DataFrame({"pv": pv_values}, index=dates)
 
@@ -21,7 +27,7 @@ def sample_pv_data() -> pd.DataFrame:
 @pytest.fixture
 def sample_weather_data() -> pd.DataFrame:
     """Create sample weather data with UTC timezone."""
-    dates = pd.date_range("2010-01-01", periods=100, freq="H", tz="UTC")
+    dates = pd.date_range("2010-01-01", periods=100, freq="h", tz="UTC")
     return pd.DataFrame(
         {
             "ghi": np.random.rand(100) * 1000,
@@ -45,7 +51,7 @@ def sample_merged_data(sample_pv_data, sample_weather_data) -> pd.DataFrame:
 @pytest.fixture
 def sample_training_data() -> pd.DataFrame:
     """Create sample data with engineered features for training."""
-    dates = pd.date_range("2010-01-01", periods=200, freq="H", tz="UTC")
+    dates = pd.date_range("2010-01-01", periods=200, freq="h", tz="UTC")
     df = pd.DataFrame(
         {
             "pv": np.random.rand(200) * 0.8,
@@ -87,3 +93,12 @@ def sample_time_series() -> np.ndarray:
     """Create sample time series for baseline computation."""
     np.random.seed(42)
     return np.random.rand(200) * 0.8
+
+
+@pytest.fixture(autouse=True)
+def _set_deterministic_seed():
+    """Ensure deterministic randomness across tests."""
+    np.random.seed(0)
+    random.seed(0)
+    if torch is not None:
+        torch.manual_seed(0)

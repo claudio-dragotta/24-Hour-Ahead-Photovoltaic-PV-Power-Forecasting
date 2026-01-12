@@ -40,9 +40,11 @@ def load_predictions(multi_branch_dir: Path, tft_dir: Path):
     return mb_metrics, tft_preds_df
 
 
-def create_ensemble(multi_branch_dir: str = "outputs/multi_branch/final_v1",
-                   tft_dir: str = "outputs/tft/baseline",
-                   output_dir: str = "outputs/ensemble"):
+def create_ensemble(
+    multi_branch_dir: str = "outputs/multi_branch/final_v1",
+    tft_dir: str = "outputs/tft/baseline",
+    output_dir: str = "outputs/ensemble",
+):
     """Create optimal ensemble from Multi-Branch and TFT.
 
     Args:
@@ -75,7 +77,9 @@ def create_ensemble(multi_branch_dir: str = "outputs/multi_branch/final_v1",
     logger.info("")
     logger.info("Individual Model Performance:")
     logger.info(f"  Multi-Branch: RMSE={mb_summary['rmse_model_avg']:.4f} kW, MASE={mb_summary['mase_model_avg']:.4f}")
-    logger.info(f"  TFT:          RMSE={tft_summary['rmse_model_avg']:.4f} kW, MASE={tft_summary['mase_model_avg']:.4f}")
+    logger.info(
+        f"  TFT:          RMSE={tft_summary['rmse_model_avg']:.4f} kW, MASE={tft_summary['mase_model_avg']:.4f}"
+    )
 
     # Test different ensemble weights
     logger.info("")
@@ -84,7 +88,7 @@ def create_ensemble(multi_branch_dir: str = "outputs/multi_branch/final_v1",
 
     weights_to_test = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
     best_weight = None
-    best_rmse = float('inf')
+    best_rmse = float("inf")
     results = []
 
     for w_mb in weights_to_test:
@@ -101,8 +105,8 @@ def create_ensemble(multi_branch_dir: str = "outputs/multi_branch/final_v1",
             # Weighted combination (approximation - assumes errors combine linearly)
             # More accurate would be to combine predictions, but we don't have raw predictions saved
             # This is a reasonable approximation for ensemble weight selection
-            ensemble_rmse_h = w_mb * mb_h['rmse_model'] + w_tft * tft_h['rmse_model']
-            ensemble_mase_h = w_mb * mb_h['mase_model'] + w_tft * tft_h['mase_model']
+            ensemble_rmse_h = w_mb * mb_h["rmse_model"] + w_tft * tft_h["rmse_model"]
+            ensemble_mase_h = w_mb * mb_h["mase_model"] + w_tft * tft_h["mase_model"]
 
             ensemble_rmse_horizons.append(ensemble_rmse_h)
             ensemble_mase_horizons.append(ensemble_mase_h)
@@ -112,12 +116,7 @@ def create_ensemble(multi_branch_dir: str = "outputs/multi_branch/final_v1",
 
         logger.info(f"  w_MB={w_mb:.2f}, w_TFT={w_tft:.2f}: RMSE={avg_rmse:.4f} kW, MASE={avg_mase:.4f}")
 
-        results.append({
-            'weight_multi_branch': w_mb,
-            'weight_tft': w_tft,
-            'rmse': avg_rmse,
-            'mase': avg_mase
-        })
+        results.append({"weight_multi_branch": w_mb, "weight_tft": w_tft, "rmse": avg_rmse, "mase": avg_mase})
 
         if avg_rmse < best_rmse:
             best_rmse = avg_rmse
@@ -128,29 +127,27 @@ def create_ensemble(multi_branch_dir: str = "outputs/multi_branch/final_v1",
     logger.info("=" * 60)
     logger.info(f"✅ BEST ENSEMBLE: w_MB={best_weight:.2f}, w_TFT={1-best_weight:.2f}")
     logger.info(f"   RMSE: {best_rmse:.4f} kW")
-    logger.info(f"   Improvement over Multi-Branch: {(best_rmse - mb_summary['rmse_model_avg'])/mb_summary['rmse_model_avg']*100:+.2f}%")
-    logger.info(f"   Improvement over TFT: {(best_rmse - tft_summary['rmse_model_avg'])/tft_summary['rmse_model_avg']*100:+.2f}%")
+    logger.info(
+        f"   Improvement over Multi-Branch: {(best_rmse - mb_summary['rmse_model_avg'])/mb_summary['rmse_model_avg']*100:+.2f}%"
+    )
+    logger.info(
+        f"   Improvement over TFT: {(best_rmse - tft_summary['rmse_model_avg'])/tft_summary['rmse_model_avg']*100:+.2f}%"
+    )
     logger.info("=" * 60)
 
     # Save ensemble config
     ensemble_config = {
-        'models': ['multi_branch', 'tft'],
-        'weights': {
-            'multi_branch': best_weight,
-            'tft': 1 - best_weight
+        "models": ["multi_branch", "tft"],
+        "weights": {"multi_branch": best_weight, "tft": 1 - best_weight},
+        "performance": {
+            "rmse": best_rmse,
+            "multi_branch_rmse": mb_summary["rmse_model_avg"],
+            "tft_rmse": tft_summary["rmse_model_avg"],
         },
-        'performance': {
-            'rmse': best_rmse,
-            'multi_branch_rmse': mb_summary['rmse_model_avg'],
-            'tft_rmse': tft_summary['rmse_model_avg']
-        },
-        'model_paths': {
-            'multi_branch': str(mb_dir / "multi-branch-best.ckpt"),
-            'tft': str(tft_dir / "tft-best.ckpt")
-        }
+        "model_paths": {"multi_branch": str(mb_dir / "multi-branch-best.ckpt"), "tft": str(tft_dir / "tft-best.ckpt")},
     }
 
-    with open(out_dir / "ensemble_config.json", 'w') as f:
+    with open(out_dir / "ensemble_config.json", "w") as f:
         json.dump(ensemble_config, f, indent=2)
     logger.info(f"Saved ensemble config to {out_dir / 'ensemble_config.json'}")
 

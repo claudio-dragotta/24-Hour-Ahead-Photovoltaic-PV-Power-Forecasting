@@ -3,7 +3,7 @@
 # weather history, and future weather forecasts
 
 data:
-  processed_path: "outputs/processed.parquet"
+  processed_path: outputs/processed.parquet
   lag_hours: [1, 24, 48, 72, 96, 168]  # Multi-day lags
   rolling_hours: [3, 6, 12, 24]         # Rolling windows
   include_solar: true                    # Solar position features
@@ -11,7 +11,7 @@ data:
   include_calendar: true                 # Weekend/holiday flags
 
 model:
-  model_type: "multi_branch"
+  model_type: multi_branch
   horizon: 24
   seq_len: 168                          # 7-day encoder window
 
@@ -39,7 +39,7 @@ training:
   train_ratio: 0.6
   val_ratio: 0.2
   test_ratio: 0.2
-  seed: 42
+  seed: 2
 
 # Architecture Design Rationale:
 #

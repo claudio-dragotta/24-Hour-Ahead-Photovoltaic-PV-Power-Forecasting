@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 def combine_predictions(
     multi_branch_path: str = "outputs/ensemble/predictions_test_multi_branch.csv",
     tft_path: str = "outputs/tft/baseline/predictions_test_tft.csv",
-    output_dir: str = "outputs/ensemble"
+    output_dir: str = "outputs/ensemble",
 ):
     """Find optimal ensemble weights and combine predictions.
 
@@ -42,8 +42,8 @@ def combine_predictions(
 
     # Align predictions (ensure same samples)
     # Multi-Branch uses sample_idx (0-based), TFT might have different indexing
-    mb_df = mb_df.sort_values(['sample_idx', 'horizon']).reset_index(drop=True)
-    tft_df = tft_df.sort_values(['time_idx', 'horizon_h']).reset_index(drop=True)
+    mb_df = mb_df.sort_values(["sample_idx", "horizon"]).reset_index(drop=True)
+    tft_df = tft_df.sort_values(["time_idx", "horizon_h"]).reset_index(drop=True)
 
     # Take minimum length to ensure alignment
     min_len = min(len(mb_df), len(tft_df))
@@ -53,9 +53,9 @@ def combine_predictions(
     logger.info(f"Aligned predictions: {min_len} total ({min_len//24} samples × 24 horizons)")
 
     # Extract predictions and targets
-    mb_preds = mb_df['prediction'].values
-    tft_preds = tft_df['y_pred'].values
-    targets = mb_df['target'].values  # Use Multi-Branch targets (should be identical)
+    mb_preds = mb_df["prediction"].values
+    tft_preds = tft_df["y_pred"].values
+    targets = mb_df["target"].values  # Use Multi-Branch targets (should be identical)
 
     # Calculate individual model RMSE
     mb_rmse = rmse(targets, mb_preds)
@@ -73,7 +73,7 @@ def combine_predictions(
 
     weights_to_test = np.arange(0.0, 1.01, 0.05)  # 0.00, 0.05, 0.10, ..., 1.00
     best_weight = None
-    best_rmse = float('inf')
+    best_rmse = float("inf")
     results = []
 
     for w_mb in weights_to_test:
@@ -85,11 +85,7 @@ def combine_predictions(
         # Calculate ensemble RMSE
         ensemble_rmse = rmse(targets, ensemble_preds)
 
-        results.append({
-            'weight_multi_branch': w_mb,
-            'weight_tft': w_tft,
-            'rmse': ensemble_rmse
-        })
+        results.append({"weight_multi_branch": w_mb, "weight_tft": w_tft, "rmse": ensemble_rmse})
 
         if ensemble_rmse < best_rmse:
             best_rmse = ensemble_rmse
@@ -127,28 +123,25 @@ def combine_predictions(
 
     # Save ensemble config
     ensemble_config = {
-        'models': ['multi_branch', 'tft'],
-        'weights': {
-            'multi_branch': float(best_weight),
-            'tft': float(1 - best_weight)
+        "models": ["multi_branch", "tft"],
+        "weights": {"multi_branch": float(best_weight), "tft": float(1 - best_weight)},
+        "performance": {
+            "ensemble_rmse": float(best_rmse),
+            "multi_branch_rmse": float(mb_rmse),
+            "tft_rmse": float(tft_rmse),
+            "improvement_vs_mb": float(mb_improvement),
+            "improvement_vs_tft": float(tft_improvement),
+            "reference_rmse": reference_rmse,
+            "beats_reference": bool(best_rmse < reference_rmse),
         },
-        'performance': {
-            'ensemble_rmse': float(best_rmse),
-            'multi_branch_rmse': float(mb_rmse),
-            'tft_rmse': float(tft_rmse),
-            'improvement_vs_mb': float(mb_improvement),
-            'improvement_vs_tft': float(tft_improvement),
-            'reference_rmse': reference_rmse,
-            'beats_reference': bool(best_rmse < reference_rmse)
+        "model_paths": {
+            "multi_branch": "outputs/multi_branch/final_v1/multi-branch-best.ckpt",
+            "tft": "outputs/tft/baseline/tft-best.ckpt",
         },
-        'model_paths': {
-            'multi_branch': 'outputs/multi_branch/final_v1/multi-branch-best.ckpt',
-            'tft': 'outputs/tft/baseline/tft-best.ckpt'
-        }
     }
 
     config_path = out_dir / "ensemble_config.json"
-    with open(config_path, 'w') as f:
+    with open(config_path, "w") as f:
         json.dump(ensemble_config, f, indent=2)
     logger.info(f"Saved ensemble config to {config_path}")
 
@@ -161,9 +154,9 @@ def combine_predictions(
     # Save best ensemble predictions
     best_ensemble_preds = best_weight * mb_preds + (1 - best_weight) * tft_preds
     ensemble_df = mb_df.copy()
-    ensemble_df['prediction'] = best_ensemble_preds
-    ensemble_df['mb_prediction'] = mb_preds
-    ensemble_df['tft_prediction'] = tft_preds
+    ensemble_df["prediction"] = best_ensemble_preds
+    ensemble_df["mb_prediction"] = mb_preds
+    ensemble_df["tft_prediction"] = tft_preds
 
     ensemble_pred_path = out_dir / "predictions_test_ensemble.csv"
     ensemble_df.to_csv(ensemble_pred_path, index=False)

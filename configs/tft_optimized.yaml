@@ -2,11 +2,11 @@
 # Anti-overfitting settings based on observed train/val gap
 
 data:
-  pv_path: "data/raw/pv_dataset.xlsx"
-  wx_path: "data/raw/wx_dataset.xlsx"
-  processed_path: "outputs/processed.parquet"
-  local_tz: "Australia/Sydney"
-  processed_dir: "data/processed"
+  pv_path: data/raw/pv_dataset.xlsx
+  wx_path: data/raw/wx_dataset.xlsx
+  processed_path: outputs/processed.parquet
+  local_tz: Australia/Sydney
+  processed_dir: data/processed
   lag_hours: [1, 24, 48, 72, 96, 168]
   rolling_hours: [3, 6, 12, 24]  # include longer smoothers + variance features
   include_solar: true
@@ -14,14 +14,14 @@ data:
   dropna: true
 
 model:
-  model_type: "tft"
+  model_type: tft
   horizon: 24
   seq_len: 168
   epochs: 100
   batch_size: 64
   learning_rate: 0.0003       # alzato per capacità maggiore
   val_ratio: 0.2
-  seed: 42
+  seed: 2
   use_future_meteo: true
 
 # TFT hyperparameters OTTIMIZZATI per ridurre overfitting
@@ -36,8 +36,8 @@ tft:
   quantiles: [0.1, 0.5, 0.9]
 
 output:
-  output_dir: "outputs_tft"
+  output_dir: outputs_tft
   save_predictions: true
   save_model: true
   save_metrics: true
-  log_level: "INFO"
+  log_level: INFO
