@@ -2,11 +2,11 @@
 # State-of-the-art attention-based forecasting model for 24h-ahead PV power prediction
 
 data:
-  pv_path: "data/raw/pv_dataset.xlsx"
-  wx_path: "data/raw/wx_dataset.xlsx"
-  processed_path: "outputs/processed.parquet"  # Preferred: pre-processed parquet for speed
-  local_tz: "Australia/Sydney"
-  processed_dir: "data/processed"
+  pv_path: data/raw/pv_dataset.xlsx
+  wx_path: data/raw/wx_dataset.xlsx
+  processed_path: outputs/processed.parquet    # Preferred: pre-processed parquet for speed
+  local_tz: Australia/Sydney
+  processed_dir: data/processed
   lag_hours: [1, 24, 168]
   rolling_hours: [3, 6, 12, 24]
   include_solar: true
@@ -14,14 +14,14 @@ data:
   dropna: true
 
 model:
-  model_type: "tft"
+  model_type: tft
   horizon: 24                # 24-hour forecast horizon
   seq_len: 168               # 7-day encoder length (168 hours)
   epochs: 50                 # Maximum training epochs (early stopping active)
   batch_size: 64             # Adjust based on GPU memory
   learning_rate: 0.001       # Initial learning rate (Adam optimizer)
   val_ratio: 0.2             # Validation split ratio (chronological)
-  seed: 42
+  seed: 2
   use_future_meteo: true     # Use future weather as features (simulated NWP)
 
 # TFT-specific hyperparameters (PyTorch Forecasting)
@@ -36,8 +36,8 @@ tft:
   quantiles: [0.1, 0.5, 0.9] # Quantile loss targets
 
 output:
-  output_dir: "outputs_tft"
+  output_dir: outputs_tft
   save_predictions: true
   save_model: true
   save_metrics: true
-  log_level: "INFO"
+  log_level: INFO

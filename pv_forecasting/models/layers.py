@@ -45,8 +45,8 @@ class SoftAttention(nn.Module):
         self.fc = nn.Linear(input_dim, hidden_dim, bias=True)
 
         # Learnable context vector for attention scoring
-        self.context_vector = nn.Parameter(torch.Tensor(hidden_dim))
-        nn.init.zeros_(self.context_vector)
+        self.context_vector = nn.Parameter(torch.empty(hidden_dim))
+        nn.init.normal_(self.context_vector, mean=0.0, std=0.02)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Compute attention-weighted fusion of input branches.
@@ -67,8 +67,9 @@ class SoftAttention(nn.Module):
         # Compute attention scores via inner product with context vector
         attention_logits = torch.matmul(h, self.context_vector)  # (batch_size, num_branches)
 
-        # Apply temperature scaling and softmax normalization
-        attention_weights = torch.softmax(self.temperature * attention_logits, dim=1)
+        # Apply temperature scaling (higher temperature => more uniform weights) and softmax normalization
+        denom = max(self.temperature, 1e-6)
+        attention_weights = torch.softmax(attention_logits / denom, dim=1)
 
         # Weighted sum of input branches
         # attention_weights: (batch_size, num_branches)
@@ -94,13 +95,7 @@ class PositionalEncoding(nn.Module):
         "Attention Is All You Need" (Vaswani et al., 2017)
     """
 
-    def __init__(
-        self,
-        d_model: int,
-        max_len: int = 5000,
-        dropout: float = 0.1,
-        batch_first: bool = True
-    ):
+    def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1, batch_first: bool = True):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
         self.batch_first = batch_first
@@ -114,7 +109,7 @@ class PositionalEncoding(nn.Module):
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0).transpose(0, 1)  # (max_len, 1, d_model)
 
-        self.register_buffer('pe', pe)
+        self.register_buffer("pe", pe)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Add positional encoding to input embeddings.
@@ -129,10 +124,10 @@ class PositionalEncoding(nn.Module):
         if self.batch_first:
             # x: (batch_size, seq_len, d_model)
             x = x.permute(1, 0, 2)  # (seq_len, batch_size, d_model)
-            x = x + self.pe[:x.size(0), :]
+            x = x + self.pe[: x.size(0), :]
             x = x.permute(1, 0, 2)  # back to (batch_size, seq_len, d_model)
         else:
             # x: (seq_len, batch_size, d_model)
-            x = x + self.pe[:x.size(0), :]
+            x = x + self.pe[: x.size(0), :]
 
         return self.dropout(x)

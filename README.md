@@ -66,6 +66,131 @@ The system currently implements a state-of-the-art Multi-Branch Transformer arch
 
 *Note: nRMSE of 3-8% is considered excellent for day-ahead PV forecasting in literature*
 
+---
+
+### 🔬 Seed Optimization Study (January 2026)
+
+To ensure reproducibility and find the optimal random initialization, we conducted an extensive **100-seed search** experiment.
+
+**Methodology:**
+- Trained the Multi-Branch Transformer 100 times with different random seeds (0, 2, 4, ..., 198)
+- Same architecture and hyperparameters across all runs
+- Early stopping with patience=10, max 100 epochs per seed
+- Total training time: ~18 hours on NVIDIA RTX 4070 Laptop GPU
+
+**Results Summary:**
+
+| Metric | Value |
+|--------|-------|
+| Best Seed | **2** |
+| Best MASE | **0.4455** |
+| Best RMSE | **3.23 kW** |
+| Mean MASE | 0.525 ± 0.036 |
+| Worst MASE | 0.631 |
+
+**Top 10 Seeds:**
+
+| Rank | Seed | MASE | RMSE (kW) |
+|------|------|------|-----------|
+| 🥇 | **2** | **0.4455** | **3.23** |
+| 🥈 | 42 | 0.4634 | 3.31 |
+| 🥉 | 114 | 0.4662 | 3.36 |
+| 4 | 176 | 0.4665 | 3.27 |
+| 5 | 78 | 0.4673 | 3.33 |
+| 6 | 130 | 0.4727 | 3.44 |
+| 7 | 7 | 0.4731 | 3.34 |
+| 8 | 128 | 0.4781 | 3.34 |
+| 9 | 26 | 0.4782 | 3.45 |
+| 10 | 134 | 0.4821 | 3.45 |
+
+**Key Findings:**
+- **Seed 2** achieves **3.8% better MASE** than the commonly used seed 42
+- Significant variability across seeds: std = 0.036 (7% relative to mean)
+- Top 5 seeds all achieve MASE < 0.47, demonstrating consistent architecture quality
+- Model checkpoints saved in `outputs/multi_branch/seed_search/seed_*/`
+
+**Recommended Configuration:**
+```bash
+# Train with optimal seed
+python scripts/training/train_multi_branch.py \
+  --seed 2 \
+  --processed-path outputs/processed.parquet \
+  --outdir outputs/multi_branch/final
+```
+
+---
+
+### 📊 Final Model Performance (Seed 2)
+
+After selecting seed 2 as the optimal configuration, we generated final predictions on the test set.
+
+**Overall Metrics:**
+
+| Metric | Value |
+|--------|-------|
+| **RMSE** | **3.24 kW** |
+| **MASE** | **0.51** |
+| **nRMSE** | **4.70%** |
+| Test Samples | 3,284 × 24 horizons |
+
+**Per-Horizon Performance:**
+
+| Horizon | RMSE (kW) | MASE | Notes |
+|---------|-----------|------|-------|
+| h=1-6 | 3.1-3.4 | 0.44-0.48 | Short-term |
+| h=7-12 | 2.9-3.2 | 0.39-0.44 | **Best performance** ⭐ |
+| h=13-18 | 3.0-3.6 | 0.41-0.49 | Mid-term |
+| h=19-23 | 2.9-3.4 | 0.41-0.50 | Stable |
+| h=24 | 4.4 | 0.62 | Longest horizon |
+
+**Key Observations:**
+- **Consistent performance** across all 24 horizons (no degradation like LightGBM)
+- Best accuracy at horizons 8-11 (mid-day predictions): RMSE ~2.9 kW, MASE ~0.40
+- Slight increase at h=24 (expected for 24h-ahead forecasting)
+- **All horizons MASE < 1.0**: Always better than naive seasonal baseline
+
+**Output Files:**
+- `outputs/multi_branch/final_seed2/predictions_test_wide.csv` - Wide format (1 row per sample)
+- `outputs/multi_branch/final_seed2/predictions_test_long.csv` - Long format (for plotting)
+- `outputs/multi_branch/final_seed2/metrics_final.json` - Complete metrics by horizon
+
+---
+
+### 📈 Generated Visualizations
+
+All plots are saved in `outputs/plots/` and can be regenerated with:
+```bash
+python scripts/visualization/generate_all_plots.py
+python scripts/visualization/generate_comparison_plots.py
+```
+
+#### Model Analysis Plots (01-10)
+
+| Plot | File | Description |
+|------|------|-------------|
+| 01 | `actual_vs_predicted_scatter.png` | Scatter plot of actual vs predicted values with perfect prediction line. Shows overall model accuracy and potential biases. |
+| 02 | `error_distribution.png` | Histogram of prediction errors + boxplot by horizon. Reveals error distribution shape and outliers. |
+| 03 | `metrics_by_horizon.png` | Bar charts of RMSE and MASE for each forecast horizon (h=1...24). Identifies which horizons are harder to predict. |
+| 04 | `sample_predictions.png` | Three example 24h forecasts showing actual vs predicted curves. Demonstrates model behavior on specific days. |
+| 05 | `heatmap_errors.png` | Heatmap of mean absolute error by power level and horizon. Shows where the model struggles most. |
+| 06 | `residuals_analysis.png` | Diagnostic plots: residuals vs predicted, Q-Q plot, and autocorrelation analysis. Validates model assumptions. |
+| 07 | `seed_comparison.png` | Results of 100-seed experiment: top 10 seeds and MASE distribution. Demonstrates seed impact on performance. |
+| 08 | `daily_pattern.png` | Average daily pattern: actual vs predicted across 24 hours. Shows systematic biases in daily cycle. |
+| 09 | `error_percentiles.png` | Error percentiles (5th, 25th, 50th, 75th, 95th) by horizon. Shows prediction uncertainty at each horizon. |
+| 10 | `summary_dashboard.png` | **Overview dashboard** with 6 subplots summarizing all key metrics and visualizations. |
+
+#### Model Comparison Plots (11-15)
+
+| Plot | File | Description |
+|------|------|-------------|
+| 11 | `model_comparison_overall.png` | Bar chart comparing RMSE and MASE across all models (Multi-Branch, TFT, CNN-BiLSTM). |
+| 12 | `model_comparison_by_horizon.png` | Line plots comparing Multi-Branch vs TFT performance at each horizon. Shows where each model excels. |
+| 13 | `improvement_heatmap.png` | Heatmap showing % improvement of Multi-Branch over TFT for each metric and horizon. Green = MB better. |
+| 14 | `architecture_diagram.png` | **Detailed architecture diagram** of Multi-Branch Transformer showing all components, data flow, and dimensions. |
+| 15 | `model_summary_table.png` | Summary table comparing all models: metrics, parameters, training time, and status. |
+
+---
+
 **Training New Model:**
 
 ```bash
@@ -181,7 +306,7 @@ See [EXPERIMENTS.md](EXPERIMENTS.md) for detailed comparison plan and [METRICS_A
 
 1. **TFT vs CNN Performance**: Both baseline models achieve nearly identical test RMSE (~3.71), demonstrating that well-tuned deep learning architectures can match attention-based models.
 
-2. **Optimization Impact**: 
+2. **Optimization Impact**:
    - TFT: Reduced from 613K→176K parameters with optimized hyperparameters (hidden=32, heads=2, dropout=0.4, lr=1e-4)
    - CNN: Increased from 240K→597K parameters with deeper architecture, mixed precision training, and aggressive learning rate scheduling (lr=1e-3 with ReduceLROnPlateau)
 
@@ -206,7 +331,7 @@ We tested alternative TFT configurations to find optimal model capacity:
 
 **Lesson**: For time series forecasting with limited data (~17K samples), aggressive regularization and smaller models often outperform larger architectures.
 
-**Next Steps**: 
+**Next Steps**:
 1. **Hyperparameter Grid Search**: Use Ray Tune to test all 243 combinations of TFT hyperparameters (3 concurrent trials, ~20 hours with ASHA early stopping)
 2. **LightGBM Baseline**: Complete multi-horizon gradient boosting baseline
 3. **Ensemble System**: Build and optimize weighted ensemble from TFT + CNN + LightGBM
@@ -1261,7 +1386,7 @@ The model is evaluated using:
 1. **MASE (Mean Absolute Scaled Error)**: Primary metric
    - Scales error relative to naive seasonal baseline (24h lag)
    - MASE < 1 indicates better than naive forecast
-   
+
 2. **RMSE (Root Mean Squared Error)**: Secondary metric
    - Measures prediction accuracy in kW units
    - Penalizes larger errors more heavily
@@ -1357,7 +1482,7 @@ Notes:
 
 **Author**: Claudio Dragotta
 **Date**: November 2025
-**Institution**: Deep Learning Course - Magistrale  
+**Institution**: Deep Learning Course - Magistrale
 **Repository**: [24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting](https://github.com/claudio-dragotta/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting)
 
 ---

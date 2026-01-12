@@ -33,8 +33,8 @@ class TestAlignHourly:
 
     def test_align_handles_missing_data(self):
         """Test alignment with non-overlapping data."""
-        pv = pd.DataFrame({"pv": [0.5, 0.6, 0.7]}, index=pd.date_range("2010-01-01", periods=3, freq="H", tz="UTC"))
-        wx = pd.DataFrame({"ghi": [100, 200, 300]}, index=pd.date_range("2010-01-02", periods=3, freq="H", tz="UTC"))
+        pv = pd.DataFrame({"pv": [0.5, 0.6, 0.7]}, index=pd.date_range("2010-01-01", periods=3, freq="h", tz="UTC"))
+        wx = pd.DataFrame({"ghi": [100, 200, 300]}, index=pd.date_range("2010-01-02", periods=3, freq="h", tz="UTC"))
 
         result = align_hourly(pv, wx)
 

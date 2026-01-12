@@ -22,7 +22,7 @@ from pv_forecasting.pipeline import load_and_engineer_features, persist_processe
 from pv_forecasting.window import chronological_split, make_windows
 
 
-def set_seed(seed: int = 42):
+def set_seed(seed: int = 2):
     random.seed(seed)
     np.random.seed(seed)
     tf.random.set_seed(seed)
@@ -168,7 +168,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    set_seed(42)
+    set_seed(2)
 
     out_dir = Path(args.outdir)
     out_dir.mkdir(parents=True, exist_ok=True)

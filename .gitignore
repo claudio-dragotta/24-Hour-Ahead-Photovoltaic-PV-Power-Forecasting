@@ -70,6 +70,9 @@ data/processed/*.parquet
 data/processed/*.xlsx
 data/processed/*.joblib
 
+# Ignore processed data directories (including subfolders)
+data/processed/
+
 # Model outputs - Allow trained models for portability
 # outputs/
 # outputs_*/
@@ -88,6 +91,9 @@ logs/
 lightning_logs/
 tensorboard/
 wandb/
+
+# Ignore outputs folder (plots, saved predictions, etc.)
+outputs/
 
 # PyTorch Lightning checkpoints
 checkpoints/

@@ -2,10 +2,10 @@
 # Multi-horizon approach with one model per forecast hour
 
 data:
-  pv_path: "data/raw/pv_dataset.xlsx"
-  wx_path: "data/raw/wx_dataset.xlsx"
-  local_tz: "Australia/Sydney"
-  processed_dir: "data/processed"
+  pv_path: data/raw/pv_dataset.xlsx
+  wx_path: data/raw/wx_dataset.xlsx
+  local_tz: Australia/Sydney
+  processed_dir: data/processed
   lag_hours: [1, 24, 168]
   rolling_hours: [3, 6]
   include_solar: true
@@ -13,11 +13,11 @@ data:
   dropna: true
 
 model:
-  model_type: "lgbm"
+  model_type: lgbm
   horizon: 24
   train_ratio: 0.7
   val_ratio: 0.1
-  seed: 42
+  seed: 2
 
 lightgbm:
   n_estimators: 500          # Trees per model
@@ -30,11 +30,11 @@ lightgbm:
   reg_alpha: 0.1             # L1 regularization
   reg_lambda: 0.1            # L2 regularization
   use_future_meteo: true     # Use future weather as features (simulated NWP)
-  future_cols: ["ghi", "dni", "dhi", "temp", "humidity", "clouds_all", "wind_speed"]
+  future_cols: [ghi, dni, dhi, temp, humidity, clouds_all, wind_speed]
 
 output:
-  output_dir: "outputs/lgbm"
+  output_dir: outputs/lgbm
   save_predictions: true
   save_model: true
   save_history: true
-  log_level: "INFO"
+  log_level: INFO

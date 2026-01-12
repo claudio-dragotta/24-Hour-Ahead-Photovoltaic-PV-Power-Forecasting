@@ -26,9 +26,9 @@ class TestMultiBranchTransformer:
         n_forecast_weather = 7
 
         features = {
-            'pv_history': torch.randn(batch_size, seq_len_encoder, n_pv_features),
-            'weather_history': torch.randn(batch_size, seq_len_encoder, n_hist_weather),
-            'weather_forecast': torch.randn(batch_size, seq_len_decoder, n_forecast_weather)
+            "pv_history": torch.randn(batch_size, seq_len_encoder, n_pv_features),
+            "weather_history": torch.randn(batch_size, seq_len_encoder, n_hist_weather),
+            "weather_forecast": torch.randn(batch_size, seq_len_decoder, n_forecast_weather),
         }
         targets = torch.rand(batch_size, seq_len_decoder)  # PV values in [0, 1]
 
@@ -49,7 +49,7 @@ class TestMultiBranchTransformer:
             dim_feedforward=128,
             dropout=0.1,
             learning_rate=1e-3,
-            weight_decay=1e-4
+            weight_decay=1e-4,
         )
 
     def test_model_initialization(self, model):
@@ -64,11 +64,11 @@ class TestMultiBranchTransformer:
         assert model.num_layers == 1
 
         # Check sub-modules exist
-        assert hasattr(model, 'pv_embedding')
-        assert hasattr(model, 'weather_hist_embedding')
-        assert hasattr(model, 'weather_forecast_embedding')
-        assert hasattr(model, 'fusion_stage1')
-        assert hasattr(model, 'fusion_stage2')
+        assert hasattr(model, "pv_embedding")
+        assert hasattr(model, "weather_hist_embedding")
+        assert hasattr(model, "weather_forecast_embedding")
+        assert hasattr(model, "fusion_stage1")
+        assert hasattr(model, "fusion_stage2")
 
     def test_forward_pass_shape(self, model, sample_batch):
         """Test forward pass produces correct output shape."""
@@ -78,7 +78,7 @@ class TestMultiBranchTransformer:
         with torch.no_grad():
             output = model(features)
 
-        batch_size = features['pv_history'].shape[0]
+        batch_size = features["pv_history"].shape[0]
         expected_shape = (batch_size, 24)
 
         assert output.shape == expected_shape
@@ -127,7 +127,7 @@ class TestMultiBranchTransformer:
         model.eval()
         predictions = model.predict_step(sample_batch, batch_idx=0)
 
-        batch_size = sample_batch[0]['pv_history'].shape[0]
+        batch_size = sample_batch[0]["pv_history"].shape[0]
         assert predictions.shape == (batch_size, 24)
 
     def test_gradient_flow(self, model, sample_batch):
@@ -160,13 +160,13 @@ class TestMultiBranchTransformer:
         """Test optimizer configuration."""
         opt_config = model.configure_optimizers()
 
-        assert 'optimizer' in opt_config
-        assert 'lr_scheduler' in opt_config
+        assert "optimizer" in opt_config
+        assert "lr_scheduler" in opt_config
 
-        optimizer = opt_config['optimizer']
+        optimizer = opt_config["optimizer"]
         assert isinstance(optimizer, torch.optim.Adam)
-        assert optimizer.defaults['lr'] == 1e-3
-        assert optimizer.defaults['weight_decay'] == 1e-4
+        assert optimizer.defaults["lr"] == 1e-3
+        assert optimizer.defaults["weight_decay"] == 1e-4
 
     def test_different_batch_sizes(self, model):
         """Test model handles different batch sizes."""
@@ -175,9 +175,9 @@ class TestMultiBranchTransformer:
 
         for batch_size in [1, 4, 16, 32]:
             features = {
-                'pv_history': torch.randn(batch_size, seq_len_encoder, 3),
-                'weather_history': torch.randn(batch_size, seq_len_encoder, 12),
-                'weather_forecast': torch.randn(batch_size, seq_len_decoder, 7)
+                "pv_history": torch.randn(batch_size, seq_len_encoder, 3),
+                "weather_history": torch.randn(batch_size, seq_len_encoder, 12),
+                "weather_forecast": torch.randn(batch_size, seq_len_decoder, 7),
             }
 
             model.eval()
@@ -216,15 +216,15 @@ class TestMultiBranchTransformer:
             dim_feedforward=128,
             dropout=0.1,
             learning_rate=1e-3,
-            weight_decay=1e-4
+            weight_decay=1e-4,
         )
         new_model.load_state_dict(torch.load(checkpoint_path))
 
         # Compare outputs
         features = {
-            'pv_history': torch.randn(4, 168, 3),
-            'weather_history': torch.randn(4, 168, 12),
-            'weather_forecast': torch.randn(4, 24, 7)
+            "pv_history": torch.randn(4, 168, 3),
+            "weather_history": torch.randn(4, 168, 12),
+            "weather_forecast": torch.randn(4, 24, 7),
         }
 
         model.eval()
@@ -253,9 +253,9 @@ class TestMultiBranchTransformer:
         """Test model works with different hyperparameters."""
         configs = [
             # Small model
-            {'d_model': 64, 'num_heads': 2, 'num_layers': 1, 'dim_feedforward': 128},
+            {"d_model": 64, "num_heads": 2, "num_layers": 1, "dim_feedforward": 128},
             # Medium model
-            {'d_model': 128, 'num_heads': 4, 'num_layers': 2, 'dim_feedforward': 512},
+            {"d_model": 128, "num_heads": 4, "num_layers": 2, "dim_feedforward": 512},
             # Large model (commented out for speed)
             # {'d_model': 256, 'num_heads': 8, 'num_layers': 3, 'dim_feedforward': 1024},
         ]
@@ -267,13 +267,13 @@ class TestMultiBranchTransformer:
                 n_forecast_weather_features=7,
                 seq_len_encoder=168,
                 seq_len_decoder=24,
-                **config
+                **config,
             )
 
             features = {
-                'pv_history': torch.randn(4, 168, 3),
-                'weather_history': torch.randn(4, 168, 12),
-                'weather_forecast': torch.randn(4, 24, 7)
+                "pv_history": torch.randn(4, 168, 3),
+                "weather_history": torch.randn(4, 168, 12),
+                "weather_forecast": torch.randn(4, 24, 7),
             }
 
             model.eval()
@@ -290,7 +290,7 @@ class TestMultiBranchTransformer:
         model.eval()
         with torch.no_grad():
             # Branch 1: PV
-            pv_emb = model.pv_embedding(features['pv_history'])
+            pv_emb = model.pv_embedding(features["pv_history"])
             pv_emb = model.pv_pos_encoder(pv_emb)
             pv_encoded = model.pv_transformer(pv_emb)
             assert pv_encoded.shape == (8, 168, 64)  # (batch, seq_enc, d_model)
@@ -306,12 +306,12 @@ class TestMultiBranchTransformer:
         model.eval()
         with torch.no_grad():
             # Process all branches
-            pv_emb = model.pv_embedding(features['pv_history'])
+            pv_emb = model.pv_embedding(features["pv_history"])
             pv_emb = model.pv_pos_encoder(pv_emb)
             pv_encoded = model.pv_transformer(pv_emb)
             pv_pooled = model.pv_temporal_pooling(pv_encoded.permute(0, 2, 1)).squeeze(-1)
 
-            wx_hist_emb = model.weather_hist_embedding(features['weather_history'])
+            wx_hist_emb = model.weather_hist_embedding(features["weather_history"])
             wx_hist_emb = model.weather_hist_pos_encoder(wx_hist_emb)
             wx_hist_encoded = model.weather_hist_transformer(wx_hist_emb)
             wx_hist_pooled = model.weather_hist_temporal_pooling(wx_hist_encoded.permute(0, 2, 1)).squeeze(-1)
@@ -327,14 +327,14 @@ class TestMultiBranchTransformer:
         """Test that hyperparameters are saved correctly."""
         hparams = model.hparams
 
-        assert 'n_pv_features' in hparams
-        assert 'n_hist_weather_features' in hparams
-        assert 'n_forecast_weather_features' in hparams
-        assert 'seq_len_encoder' in hparams
-        assert 'seq_len_decoder' in hparams
-        assert 'd_model' in hparams
-        assert 'num_heads' in hparams
-        assert 'num_layers' in hparams
+        assert "n_pv_features" in hparams
+        assert "n_hist_weather_features" in hparams
+        assert "n_forecast_weather_features" in hparams
+        assert "seq_len_encoder" in hparams
+        assert "seq_len_decoder" in hparams
+        assert "d_model" in hparams
+        assert "num_heads" in hparams
+        assert "num_layers" in hparams
 
 
 class TestMultiBranchIntegration:
@@ -345,9 +345,9 @@ class TestMultiBranchIntegration:
         # Create simple dataset
         batch_size = 8
         features = {
-            'pv_history': torch.randn(batch_size, 168, 3),
-            'weather_history': torch.randn(batch_size, 168, 12),
-            'weather_forecast': torch.randn(batch_size, 24, 7)
+            "pv_history": torch.randn(batch_size, 168, 3),
+            "weather_history": torch.randn(batch_size, 168, 12),
+            "weather_forecast": torch.randn(batch_size, 24, 7),
         }
         targets = torch.rand(batch_size, 24)
 
@@ -362,7 +362,7 @@ class TestMultiBranchIntegration:
             num_heads=2,
             num_layers=1,
             dim_feedforward=64,
-            dropout=0.1
+            dropout=0.1,
         )
 
         # Train for a few steps

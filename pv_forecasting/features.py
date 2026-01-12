@@ -524,3 +524,85 @@ def encode_weather_description(df: pd.DataFrame, col: str = "weather_description
 
     out[col] = encoded
     return out
+
+
+def encode_weather_onehot(df: pd.DataFrame, col: str = "weather_description") -> pd.DataFrame:
+    """Encode weather description as one-hot vectors.
+
+    Creates binary columns for each weather category, which is more suitable
+    for neural networks as it doesn't impose artificial ordinal relationships.
+
+    Categories (19 total based on dataset):
+        - sky is clear
+        - few clouds
+        - scattered clouds
+        - broken clouds
+        - overcast clouds
+        - light rain
+        - moderate rain
+        - heavy intensity rain
+        - light intensity shower rain
+        - shower rain
+        - light intensity drizzle
+        - drizzle
+        - thunderstorm
+        - thunderstorm with rain
+        - mist
+        - fog
+        - haze
+        - smoke
+        - proximity squalls
+
+    Args:
+        df: Input dataframe containing weather description column.
+        col: Name of weather description column. Default: "weather_description".
+
+    Returns:
+        DataFrame with original column removed and replaced by binary columns
+        named "wx_{category}" for each weather category.
+
+    Example:
+        >>> df = pd.DataFrame({'weather_description': ['sky is clear', 'light rain']})
+        >>> df_encoded = encode_weather_onehot(df)
+        >>> 'wx_clear' in df_encoded.columns
+        True
+    """
+    out = df.copy()
+
+    if col not in out.columns:
+        return out
+
+    # Convert to lowercase string for matching
+    weather = out[col].astype(str).str.lower().str.strip()
+
+    # Define weather category mappings (raw text -> column name)
+    weather_categories = {
+        "sky is clear": "wx_clear",
+        "few clouds": "wx_few_clouds",
+        "scattered clouds": "wx_scattered_clouds",
+        "broken clouds": "wx_broken_clouds",
+        "overcast clouds": "wx_overcast_clouds",
+        "light rain": "wx_light_rain",
+        "moderate rain": "wx_moderate_rain",
+        "heavy intensity rain": "wx_heavy_rain",
+        "light intensity shower rain": "wx_light_shower_rain",
+        "shower rain": "wx_shower_rain",
+        "light intensity drizzle": "wx_light_drizzle",
+        "drizzle": "wx_drizzle",
+        "thunderstorm": "wx_thunderstorm",
+        "thunderstorm with rain": "wx_thunderstorm_rain",
+        "mist": "wx_mist",
+        "fog": "wx_fog",
+        "haze": "wx_haze",
+        "smoke": "wx_smoke",
+        "proximity squalls": "wx_squalls",
+    }
+
+    # Create one-hot columns
+    for raw_name, col_name in weather_categories.items():
+        out[col_name] = (weather == raw_name).astype(float)
+
+    # Remove original column
+    out = out.drop(columns=[col])
+
+    return out

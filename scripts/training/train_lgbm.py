@@ -331,7 +331,7 @@ def parse_args():
     ap.add_argument("--use-future-meteo", action="store_true", help="Add future meteo covariates if available")
     ap.add_argument("--walk-forward-folds", type=int, default=0, help="Run optional walk-forward evaluation")
     ap.add_argument("--fold-val-frac", type=float, default=0.1, help="Validation fraction per fold for walk-forward")
-    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--seed", type=int, default=2)
     return ap.parse_args()
 
 

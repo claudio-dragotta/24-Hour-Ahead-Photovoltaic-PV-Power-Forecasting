@@ -62,14 +62,14 @@ class PVForecastingDataset(Dataset):
         pv_lag_features: List[str],
         weather_lag_features: List[str],
         forecast_features: List[str],
-        target_col: str = 'pv',
+        target_col: str = "pv",
         seq_len: int = 168,
         horizon: int = 24,
         sample_weights: Optional[np.ndarray] = None,
         pv_scaler: Optional[StandardScaler] = None,
         weather_scaler: Optional[StandardScaler] = None,
         forecast_scaler: Optional[StandardScaler] = None,
-        target_scaler: Optional[StandardScaler] = None
+        target_scaler: Optional[StandardScaler] = None,
     ):
         """Initialize dataset with feature separation and normalization.
 
@@ -124,12 +124,12 @@ class PVForecastingDataset(Dataset):
         target_end = target_start + self.horizon
 
         # Extract features for each branch
-        pv_history = self.df.loc[start_idx:end_idx-1, self.pv_lag_features].values.astype(np.float32)
-        weather_history = self.df.loc[start_idx:end_idx-1, self.weather_lag_features].values.astype(np.float32)
-        weather_forecast = self.df.loc[target_start:target_end-1, self.forecast_features].values.astype(np.float32)
+        pv_history = self.df.loc[start_idx : end_idx - 1, self.pv_lag_features].values.astype(np.float32)
+        weather_history = self.df.loc[start_idx : end_idx - 1, self.weather_lag_features].values.astype(np.float32)
+        weather_forecast = self.df.loc[target_start : target_end - 1, self.forecast_features].values.astype(np.float32)
 
         # Extract targets
-        targets = self.df.loc[target_start:target_end-1, self.target_col].values.astype(np.float32)
+        targets = self.df.loc[target_start : target_end - 1, self.target_col].values.astype(np.float32)
 
         # Apply normalization if scalers are provided
         if self.pv_scaler is not None:
@@ -143,9 +143,9 @@ class PVForecastingDataset(Dataset):
 
         # Convert to tensors
         features = {
-            'pv_history': torch.from_numpy(pv_history.astype(np.float32)),
-            'weather_history': torch.from_numpy(weather_history.astype(np.float32)),
-            'weather_forecast': torch.from_numpy(weather_forecast.astype(np.float32))
+            "pv_history": torch.from_numpy(pv_history.astype(np.float32)),
+            "weather_history": torch.from_numpy(weather_history.astype(np.float32)),
+            "weather_forecast": torch.from_numpy(weather_forecast.astype(np.float32)),
         }
         targets = torch.from_numpy(targets.astype(np.float32))
 
@@ -156,10 +156,7 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     ap = argparse.ArgumentParser(description="Train Multi-Branch Transformer for 24h-ahead PV forecasting")
     ap.add_argument(
-        "--processed-path",
-        type=str,
-        default="outputs/processed.parquet",
-        help="Path to pre-processed parquet file"
+        "--processed-path", type=str, default="outputs/processed.parquet", help="Path to pre-processed parquet file"
     )
     ap.add_argument("--pv-path", type=str, default="data/raw/pv_dataset.xlsx")
     ap.add_argument("--wx-path", type=str, default="data/raw/wx_dataset.xlsx")
@@ -183,7 +180,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--train-ratio", type=float, default=0.6)
     ap.add_argument("--val-ratio", type=float, default=0.2)
     ap.add_argument("--test-ratio", type=float, default=0.2)
-    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--seed", type=int, default=2)
     return ap.parse_args()
 
 
@@ -220,21 +217,59 @@ def main() -> None:
         logger.warning("sp_zenith not found, using uniform weights")
 
     # Define feature groups for multi-branch architecture
-    pv_lag_features = [c for c in df.columns if c.startswith('pv_lag') or c.startswith('pv_roll')]
+    pv_lag_features = [c for c in df.columns if c.startswith("pv_lag") or c.startswith("pv_roll")]
     weather_lag_features = [
-        c for c in df.columns
-        if (c.startswith('ghi_lag') or c.startswith('dni_lag') or c.startswith('dhi_lag') or
-            c.startswith('temp_lag') or 'roll' in c and not c.startswith('pv_roll'))
+        c
+        for c in df.columns
+        if (
+            c.startswith("ghi_lag")
+            or c.startswith("dni_lag")
+            or c.startswith("dhi_lag")
+            or c.startswith("temp_lag")
+            or "roll" in c
+            and not c.startswith("pv_roll")
+        )
     ]
-    forecast_features = [
-        c for c in ['temp', 'humidity', 'wind_speed', 'clouds', 'ghi', 'dni', 'dhi',
-                    'sp_zenith', 'sp_azimuth', 'cs_ghi', 'cs_dni', 'cs_dhi',
-                    'hour_sin', 'hour_cos', 'doy_sin', 'doy_cos', 'is_weekend', 'is_holiday']
+
+    # Base forecast features
+    base_forecast = [
+        c
+        for c in [
+            "temp",
+            "humidity",
+            "wind_speed",
+            "clouds",
+            "ghi",
+            "dni",
+            "dhi",
+            "sp_zenith",
+            "sp_azimuth",
+            "cs_ghi",
+            "cs_dni",
+            "cs_dhi",
+            "hour_sin",
+            "hour_cos",
+            "doy_sin",
+            "doy_cos",
+            "is_weekend",
+            "is_holiday",
+            "pressure",
+            "dew_point",
+            "wind_deg",
+            "rain_1h",
+            "kc",
+        ]
         if c in df.columns
     ]
+    # Add one-hot weather columns (wx_*)
+    wx_features = [c for c in df.columns if c.startswith("wx_")]
+    forecast_features = base_forecast + wx_features
 
     logger.info(f"PV lag features ({len(pv_lag_features)}): {pv_lag_features[:5]}...")
     logger.info(f"Weather lag features ({len(weather_lag_features)}): {weather_lag_features[:5]}...")
+    logger.info(f"Forecast features ({len(forecast_features)}): {forecast_features[:5]}...")
+    if wx_features:
+        logger.info(f"  Including {len(wx_features)} weather one-hot features")
     logger.info(f"Forecast features ({len(forecast_features)}): {forecast_features[:5]}...")
 
     # Chronological 3-way split
@@ -275,7 +310,7 @@ def main() -> None:
         pv_scaler=pv_scaler,
         weather_scaler=weather_scaler,
         forecast_scaler=forecast_scaler,
-        target_scaler=target_scaler
+        target_scaler=target_scaler,
     )
     val_dataset = PVForecastingDataset(
         df.iloc[cutoff_train:cutoff_val],
@@ -288,7 +323,7 @@ def main() -> None:
         pv_scaler=pv_scaler,
         weather_scaler=weather_scaler,
         forecast_scaler=forecast_scaler,
-        target_scaler=target_scaler
+        target_scaler=target_scaler,
     )
     test_dataset = PVForecastingDataset(
         df.iloc[cutoff_val:],
@@ -301,7 +336,7 @@ def main() -> None:
         pv_scaler=pv_scaler,
         weather_scaler=weather_scaler,
         forecast_scaler=forecast_scaler,
-        target_scaler=target_scaler
+        target_scaler=target_scaler,
     )
 
     # Create dataloaders
@@ -324,7 +359,7 @@ def main() -> None:
         dim_feedforward=args.dim_feedforward,
         dropout=args.dropout,
         learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay
+        weight_decay=args.weight_decay,
     )
 
     logger.info(f"Model: d_model={args.d_model}, heads={args.num_heads}, layers={args.num_layers}")
@@ -332,7 +367,9 @@ def main() -> None:
     # Training callbacks
     callbacks = [
         EarlyStopping(monitor="val_loss", patience=args.early_stopping_patience, mode="min", verbose=True),
-        ModelCheckpoint(dirpath=str(out_dir), filename="multi-branch-best", monitor="val_loss", save_top_k=1, mode="min"),
+        ModelCheckpoint(
+            dirpath=str(out_dir), filename="multi-branch-best", monitor="val_loss", save_top_k=1, mode="min"
+        ),
         LearningRateMonitor(logging_interval="epoch"),
     ]
 
@@ -393,8 +430,8 @@ def main() -> None:
     train_series = df.iloc[:cutoff_train][target].values
 
     for h in range(1, args.horizon + 1):
-        y_true = all_targets[:, h-1]
-        y_pred = all_preds[:, h-1]
+        y_true = all_targets[:, h - 1]
+        y_pred = all_preds[:, h - 1]
 
         # Compute naive baseline (24h persistence)
         naive_baseline = np.roll(y_true, 24)
@@ -412,13 +449,15 @@ def main() -> None:
             mase_model = mase(y_true_valid, y_pred_valid, train_series=train_series, m=24)
             mase_naive = mase(y_true_valid, naive_valid, train_series=train_series, m=24)
 
-            metrics.append({
-                "horizon_h": h,
-                "rmse_model": float(rmse_model),
-                "rmse_naive": float(rmse_naive),
-                "mase_model": float(mase_model),
-                "mase_naive": float(mase_naive),
-            })
+            metrics.append(
+                {
+                    "horizon_h": h,
+                    "rmse_model": float(rmse_model),
+                    "rmse_naive": float(rmse_naive),
+                    "mase_model": float(mase_model),
+                    "mase_naive": float(mase_naive),
+                }
+            )
 
     # Summary metrics
     if metrics:
@@ -461,7 +500,7 @@ def main() -> None:
         "pv_scaler": pv_scaler,
         "weather_scaler": weather_scaler,
         "forecast_scaler": forecast_scaler,
-        "target_scaler": target_scaler
+        "target_scaler": target_scaler,
     }
     with open(out_dir / "scalers.pkl", "wb") as f:
         pickle.dump(scalers, f)
