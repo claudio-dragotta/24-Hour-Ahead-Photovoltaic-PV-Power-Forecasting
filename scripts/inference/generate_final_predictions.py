@@ -1,22 +1,18 @@
-"""Generate final test predictions using the best seed model (seed 2).
+"""ARCHIVED: generate_final_predictions
 
-This script loads the trained Multi-Branch model (seed 2) and generates predictions
-on the test set, saving them as CSV for analysis.
+This script has been moved to:
+    scripts/_archived/inference/generate_final_predictions.py
+
+The archived copy contains the original implementation. This stub prevents
+accidental execution from the active scripts/ tree.
 """
 
-import json
-import pickle
-from pathlib import Path
+import sys
 
-import numpy as np
-import pandas as pd
-import torch
-from torch.utils.data import DataLoader
-
-from pv_forecasting.logger import get_logger
-from pv_forecasting.models.multi_branch_tft import MultiBranchTransformer
-
-logger = get_logger(__name__)
+sys.exit(
+        "This script was archived and moved to scripts/_archived/inference/generate_final_predictions.py. "
+        "Use that file if you need the original implementation."
+)
 
 
 def compute_rmse(y_true, y_pred):

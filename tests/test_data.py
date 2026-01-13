@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pv_forecasting.data import align_hourly
+from pv_forecasting.data import align_hourly, load_pv_xlsx
 from pv_forecasting.features import standardize_feature_columns
 
 
@@ -125,6 +125,27 @@ class TestDataLoading:
         """Test loading weather data from Excel."""
         # This would require actual test data files
         pass
+
+    def test_load_pv_xlsx_rounds_to_hour(self, tmp_path):
+        """PV timestamps near hour boundaries are rounded; duplicates keep first."""
+        xlsx_path = tmp_path / "pv.xlsx"
+        # First row is metadata (skipped), then timestamp/pv rows with fractional seconds
+        df = pd.DataFrame(
+            [
+                ["meta", "meta"],
+                ["2021-01-01 00:59:59.900", 1.0],
+                ["2021-01-01 01:00:00.100", 2.0],
+            ]
+        )
+        with pd.ExcelWriter(xlsx_path) as writer:
+            df.to_excel(writer, sheet_name="Sheet1", header=False, index=False)
+
+        loaded = load_pv_xlsx(xlsx_path, local_tz="UTC")
+
+        assert len(loaded) == 1  # rows collapsed after rounding
+        assert loaded.index[0] == pd.Timestamp("2021-01-01 01:00:00", tz="UTC")
+        # First value is kept (no aggregation)
+        assert loaded["pv"].iloc[0] == pytest.approx(1.0)
 
 
 class TestDataIntegration:

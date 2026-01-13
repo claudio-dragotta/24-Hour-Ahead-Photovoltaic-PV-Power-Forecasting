@@ -1,0 +1,1 @@
+{"seed": 2, "mase": 0.4455, "rmse": 3.23, "epochs": 56, "source": "100-seed search (Jan 2026)", "architecture": "Multi-Branch Transformer", "d_model": 256, "num_heads": 4, "num_layers": 2}

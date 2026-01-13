@@ -1,51 +1,15 @@
-#!/usr/bin/env python3
-"""
-Multi-Seed Search Script for Multi-Branch Transformer
-Trains the model with multiple seeds and keeps track of the best performers.
+"""ARCHIVED: multi_seed_search
 
-Features:
-- Trains 100 seeds (configurable)
-- Keeps only top-N checkpoints to save storage
-- Early stopping per seed + global tracking
-- Generates final report with statistics
-- Can resume from previous run
-
-Usage:
-    python scripts/training/multi_seed_search.py --n-seeds 100 --keep-top 10
-    python scripts/training/multi_seed_search.py --resume  # Resume previous run
+Original script moved to scripts/_archived/training/multi_seed_search.py
+This file replaced with a small stub to avoid accidental execution.
 """
 
-import argparse
-import json
-import logging
-import shutil
 import sys
-import time
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
-import numpy as np
-import pandas as pd
-import torch
-from lightning.pytorch import Trainer, seed_everything
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
-from sklearn.preprocessing import StandardScaler
-from torch.utils.data import DataLoader, Dataset
-
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from pv_forecasting.metrics import mase as compute_mase
-from pv_forecasting.metrics import rmse as compute_rmse
-from pv_forecasting.models.multi_branch_tft import MultiBranchTransformer
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+sys.exit(
+    "This script was archived and moved to scripts/_archived/training/multi_seed_search.py. "
+    "Use the archived copy for reference."
 )
-logger = logging.getLogger(__name__)
 
 
 # ============================================================================
