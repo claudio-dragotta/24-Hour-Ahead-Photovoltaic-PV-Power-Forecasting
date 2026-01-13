@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Unisce tutte le tabelle (sheet) presenti in `data/raw/pv_dataset.xlsx`
-in un unico foglio/file e salva sia in Excel (single-sheet) che in CSV.
+in un unico CSV `data/processed/merged/pv_combined.csv`.
 
 Esempio di esecuzione:
   source .venv/bin/activate
   python3 scripts/preprocessing/flatten_pv_xlsx.py
 
 Il file risultante verrà scritto in:
-  data/processed/merged/pv_combined_single_sheet.xlsx
-  data/processed/merged/pv_combined_single_sheet.csv
+  data/processed/merged/pv_combined.csv
 """
 from __future__ import annotations
 
@@ -56,20 +55,15 @@ def main() -> None:
         combined = combined.sort_index()
     except Exception:
         pass
-
-    # Se l'indice è temporale, arrotonda all'ora più vicina e rimuovi duplicati tenendo il primo
+    # Se l'indice è temporale, rimuovi eventuali righe con timestamp NaT
     if isinstance(combined.index, pd.DatetimeIndex):
-        combined.index = combined.index.round("h")
-        combined = combined.loc[~combined.index.duplicated(keep="first")]
+        combined = combined.loc[~combined.index.isna()]
 
     out_dir = Path("data/processed/merged")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    xlsx_out = out_dir / "pv_combined_single_sheet.xlsx"
-    csv_out = out_dir / "pv_combined_single_sheet.csv"
+    csv_out = out_dir / "pv_combined.csv"
 
-    print(f"Salvo Excel: {xlsx_out}")
-    combined.to_excel(xlsx_out, sheet_name="merged")
     print(f"Salvo CSV: {csv_out}")
     combined.to_csv(csv_out)
 

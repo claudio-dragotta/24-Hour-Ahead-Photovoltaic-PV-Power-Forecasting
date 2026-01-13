@@ -56,11 +56,7 @@ def main() -> None:
     pv_idx = localize_pv_index(pv[pv_ts_col], args.local_tz)
     # Use .values to avoid pandas aligning the numeric Series by its integer index
     pv_df = pd.DataFrame({"pv": pd.to_numeric(pv[pv_val_col], errors="coerce").values}, index=pv_idx)
-    # Normalize PV timestamps to an exact hourly UTC grid to avoid millisecond offsets
-    # and DST-related duplicate hours in local time. Round to nearest hour then
-    # drop duplicates keeping the first occurrence (no aggregation).
     pv_df.index = pv_df.index.tz_convert("UTC")
-    pv_df.index = pv_df.index.round("h")
     pv_df = pv_df[~pv_df.index.duplicated(keep="first")]
 
     # Read WX CSV and parse timezone-aware timestamps

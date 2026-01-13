@@ -62,8 +62,6 @@ def load_pv_xlsx(path: Path, local_tz: str) -> pd.DataFrame:
 
         idx_local = localize_pv_index(df["timestamp"], local_tz)
         idx_utc = to_utc(idx_local)
-        # Snap timestamps to the nearest hour to remove logger drift (e.g., 02:59:59.985)
-        idx_utc = idx_utc.round("h")
         # Reset index name to avoid conflicts
         idx_utc.name = None
         pv_vals = pd.to_numeric(df["pv"], errors="coerce").values
@@ -73,7 +71,7 @@ def load_pv_xlsx(path: Path, local_tz: str) -> pd.DataFrame:
     # Concatenate all sheets
     out = pd.concat(dfs, axis=0)
     out = out.sort_index()
-    # If rounding created duplicates, keep the first occurrence (no aggregation)
+    # Keep first occurrence of any exact duplicate timestamps
     out = out[~out.index.duplicated(keep="first")]
     return out
 

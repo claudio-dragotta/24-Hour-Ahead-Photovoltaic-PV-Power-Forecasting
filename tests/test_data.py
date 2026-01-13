@@ -126,8 +126,8 @@ class TestDataLoading:
         # This would require actual test data files
         pass
 
-    def test_load_pv_xlsx_rounds_to_hour(self, tmp_path):
-        """PV timestamps near hour boundaries are rounded; duplicates keep first."""
+    def test_load_pv_xlsx_preserves_raw_timestamps(self, tmp_path):
+        """PV timestamps are preserved (no rounding), duplicates keep first."""
         xlsx_path = tmp_path / "pv.xlsx"
         # First row is metadata (skipped), then timestamp/pv rows with fractional seconds
         df = pd.DataFrame(
@@ -142,10 +142,9 @@ class TestDataLoading:
 
         loaded = load_pv_xlsx(xlsx_path, local_tz="UTC")
 
-        assert len(loaded) == 1  # rows collapsed after rounding
-        assert loaded.index[0] == pd.Timestamp("2021-01-01 01:00:00", tz="UTC")
-        # First value is kept (no aggregation)
-        assert loaded["pv"].iloc[0] == pytest.approx(1.0)
+        assert len(loaded) == 2  # both rows preserved
+        assert loaded.index[0] == pd.Timestamp("2021-01-01 00:59:59.900000", tz="UTC")
+        assert loaded.index[1] == pd.Timestamp("2021-01-01 01:00:00.100000", tz="UTC")
 
 
 class TestDataIntegration:
