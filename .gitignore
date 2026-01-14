@@ -88,7 +88,7 @@ wandb/
 
 # outputs/ removed from gitignore to track generated outputs when desired
 
-# PyTorch Lightning checkpoints
+# PyTorch Lightning checkpoints (keep local)
 checkpoints/
 *.ckpt
 
