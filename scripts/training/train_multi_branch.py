@@ -17,9 +17,8 @@ import numpy as np
 import pandas as pd
 import torch
 from lightning.pytorch import Trainer, seed_everything
-from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from sklearn.preprocessing import StandardScaler
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 
 from pv_forecasting.logger import get_logger
 from pv_forecasting.metrics import mase, rmse
@@ -156,7 +155,7 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     ap = argparse.ArgumentParser(description="Train Multi-Branch Transformer for 24h-ahead PV forecasting")
     ap.add_argument(
-        "--processed-path", type=str, default="outputs/processed.parquet", help="Path to pre-processed parquet file"
+        "--processed-path", type=str, default="/home/claudio/24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/data/processed/merged/pv_wx_combined.parquet", help="Path to pre-processed parquet file"
     )
     ap.add_argument("--pv-path", type=str, default="data/raw/pv_dataset.xlsx")
     ap.add_argument("--wx-path", type=str, default="data/raw/wx_dataset.xlsx")
@@ -177,18 +176,15 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--dayweight-min", type=float, default=0.1, help="Minimum nighttime weight")
     ap.add_argument("--metrics-zenith-max", type=float, default=90.0, help="Exclude night from metrics")
     ap.add_argument("--outdir", type=str, default="outputs/multi_branch/baseline")
-    ap.add_argument("--train-ratio", type=float, default=0.6)
-    ap.add_argument("--val-ratio", type=float, default=0.2)
-    ap.add_argument("--test-ratio", type=float, default=0.2)
-    ap.add_argument("--seed", type=int, default=2)
+    ap.add_argument("--val-ratio", type=float, default=0.1, help="Fraction of train data reserved for validation (chronological last fraction)")
     return ap.parse_args()
 
 
 def main() -> None:
     """Main training function."""
     args = parse_args()
-    seed_everything(args.seed)
-    logger.info(f"Starting Multi-Branch Transformer training with seed={args.seed}")
+    seed_everything(2)
+    logger.info("Starting Multi-Branch Transformer training with seed=2 (fixed)")
 
     out_dir = Path(args.outdir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -270,242 +266,101 @@ def main() -> None:
     logger.info(f"Forecast features ({len(forecast_features)}): {forecast_features[:5]}...")
     if wx_features:
         logger.info(f"  Including {len(wx_features)} weather one-hot features")
-    logger.info(f"Forecast features ({len(forecast_features)}): {forecast_features[:5]}...")
 
-    # Chronological 3-way split
-    n_samples = len(df)
-    cutoff_train = int(n_samples * args.train_ratio)
-    cutoff_val = int(n_samples * (args.train_ratio + args.val_ratio))
 
-    logger.info(f"Chronological split:")
-    logger.info(f"  Train: 0 to {cutoff_train} ({args.train_ratio:.1%})")
-    logger.info(f"  Validation: {cutoff_train+1} to {cutoff_val} ({args.val_ratio:.1%})")
-    logger.info(f"  Test: {cutoff_val+1} to {n_samples-1} ({args.test_ratio:.1%})")
-
-    # Fit scalers on TRAINING set only (anti-leakage)
-    train_df = df.iloc[:cutoff_train]
+    # Solo train: usa tutto il dataset per il training
+    from sklearn.preprocessing import MinMaxScaler
     pv_scaler = StandardScaler()
     weather_scaler = StandardScaler()
-    forecast_scaler = StandardScaler()
-    target_scaler = StandardScaler()
+    forecast_scaler_cont = MinMaxScaler()
+    target_scaler = MinMaxScaler()
 
-    # Fit on training data
-    pv_scaler.fit(train_df[pv_lag_features].values)
-    weather_scaler.fit(train_df[weather_lag_features].values)
-    forecast_scaler.fit(train_df[forecast_features].values)
-    target_scaler.fit(train_df[target].values.reshape(-1, 1))
+    pv_scaler.fit(df[pv_lag_features].values)
+    weather_scaler.fit(df[weather_lag_features].values)
+    forecast_scaler_cont.fit(df[base_forecast].values)
+    target_scaler.fit(df[target].values.reshape(-1, 1))
 
-    logger.info(f"Target scaling: mean={target_scaler.mean_[0]:.2f}, std={target_scaler.scale_[0]:.2f}")
+    logger.info(f"Target scaling: min={target_scaler.data_min_[0]:.2f}, max={target_scaler.data_max_[0]:.2f}")
 
-    # Create datasets with scalers
-    train_dataset = PVForecastingDataset(
-        df.iloc[:cutoff_train],
+    full_dataset = PVForecastingDataset(
+        df,
         pv_lag_features,
         weather_lag_features,
         forecast_features,
         target,
         args.seq_len,
         args.horizon,
-        sample_weights[:cutoff_train] if sample_weights is not None else None,
+        sample_weights if sample_weights is not None else None,
         pv_scaler=pv_scaler,
         weather_scaler=weather_scaler,
-        forecast_scaler=forecast_scaler,
+        forecast_scaler=forecast_scaler_cont,
         target_scaler=target_scaler,
     )
-    val_dataset = PVForecastingDataset(
-        df.iloc[cutoff_train:cutoff_val],
-        pv_lag_features,
-        weather_lag_features,
-        forecast_features,
-        target,
-        args.seq_len,
-        args.horizon,
-        pv_scaler=pv_scaler,
-        weather_scaler=weather_scaler,
-        forecast_scaler=forecast_scaler,
-        target_scaler=target_scaler,
-    )
-    test_dataset = PVForecastingDataset(
-        df.iloc[cutoff_val:],
-        pv_lag_features,
-        weather_lag_features,
-        forecast_features,
-        target,
-        args.seq_len,
-        args.horizon,
-        pv_scaler=pv_scaler,
-        weather_scaler=weather_scaler,
-        forecast_scaler=forecast_scaler,
-        target_scaler=target_scaler,
-    )
+    n_total = len(full_dataset)
+    n_val = int(n_total * args.val_ratio)
+    n_train = n_total - n_val
 
-    # Create dataloaders
+    if n_val > 0:
+        train_indices = list(range(0, n_train))
+        val_indices = list(range(n_train, n_total))
+        train_dataset = Subset(full_dataset, train_indices)
+        val_dataset = Subset(full_dataset, val_indices)
+        logger.info(f"Dataset sizes -> train: {len(train_dataset)}, val: {len(val_dataset)} (val_ratio={args.val_ratio})")
+    else:
+        train_dataset = full_dataset
+        val_dataset = None
+        logger.info("Dataset sizes -> train only (val_ratio=0)")
+
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0) if val_dataset else None
+    logger.info(f"Train batches: {len(train_loader)}; Val batches: {len(val_loader) if val_loader else 0}")
 
-    logger.info(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}, Test batches: {len(test_loader)}")
 
     # Build model
     model = MultiBranchTransformer(
         n_pv_features=len(pv_lag_features),
         n_hist_weather_features=len(weather_lag_features),
         n_forecast_weather_features=len(forecast_features),
-        seq_len_encoder=args.seq_len,
-        seq_len_decoder=args.horizon,
         d_model=args.d_model,
         num_heads=args.num_heads,
         num_layers=args.num_layers,
         dim_feedforward=args.dim_feedforward,
         dropout=args.dropout,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
+        seq_len_encoder=args.seq_len,
+        seq_len_decoder=args.horizon,
     )
 
-    logger.info(f"Model: d_model={args.d_model}, heads={args.num_heads}, layers={args.num_layers}")
-
-    # Training callbacks
-    callbacks = [
-        EarlyStopping(monitor="val_loss", patience=args.early_stopping_patience, mode="min", verbose=True),
-        ModelCheckpoint(
-            dirpath=str(out_dir), filename="multi-branch-best", monitor="val_loss", save_top_k=1, mode="min"
-        ),
-        LearningRateMonitor(logging_interval="epoch"),
-    ]
-
-    # Trainer
-    accelerator = "gpu" if torch.cuda.is_available() else "cpu"
-    logger.info(f"Using accelerator: {accelerator}")
     trainer = Trainer(
         max_epochs=args.epochs,
-        accelerator=accelerator,
-        devices=1,
-        callbacks=callbacks,
-        gradient_clip_val=0.1,
+        default_root_dir=out_dir,
         log_every_n_steps=50,
         enable_progress_bar=True,
     )
 
-    # Train
+    # Train su train e (opzionale) val
     logger.info("Starting training...")
-    trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)
+    trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader if val_loader else None)
     logger.info("Training completed")
 
-    # Load best model
-    best_path = callbacks[1].best_model_path  # type: ignore
-    if best_path:
-        logger.info(f"Loading best model from {best_path}")
-        model = MultiBranchTransformer.load_from_checkpoint(best_path)
-    else:
-        logger.warning("No best checkpoint found, using final model")
-
-    # Generate predictions on TEST set
-    logger.info("Generating test predictions...")
-    model.eval()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-
-    all_preds = []
-    all_targets = []
-    with torch.no_grad():
-        for batch in test_loader:
-            features, targets = batch
-            # Move features to device
-            features_device = {k: v.to(device) for k, v in features.items()}
-            preds = model(features_device)
-            all_preds.append(preds.cpu().numpy())
-            all_targets.append(targets.cpu().numpy())
-
-    all_preds = np.concatenate(all_preds, axis=0)  # (N, 24)
-    all_targets = np.concatenate(all_targets, axis=0)  # (N, 24)
-
-    # Denormalize predictions and targets back to original scale
-    logger.info("Denormalizing predictions...")
-    all_preds = target_scaler.inverse_transform(all_preds)  # (N, 24)
-    all_targets = target_scaler.inverse_transform(all_targets)  # (N, 24)
-
-    # Compute metrics per horizon
-    logger.info("Computing metrics...")
-    metrics = []
-    train_series = df.iloc[:cutoff_train][target].values
-
-    for h in range(1, args.horizon + 1):
-        y_true = all_targets[:, h - 1]
-        y_pred = all_preds[:, h - 1]
-
-        # Compute naive baseline (24h persistence)
-        naive_baseline = np.roll(y_true, 24)
-        naive_baseline[:24] = np.nan  # First 24 can't have naive forecast
-
-        # Filter out NaN
-        valid_mask = ~np.isnan(naive_baseline)
-        y_true_valid = y_true[valid_mask]
-        y_pred_valid = y_pred[valid_mask]
-        naive_valid = naive_baseline[valid_mask]
-
-        if len(y_true_valid) > 0:
-            rmse_model = rmse(y_true_valid, y_pred_valid)
-            rmse_naive = rmse(y_true_valid, naive_valid)
-            mase_model = mase(y_true_valid, y_pred_valid, train_series=train_series, m=24)
-            mase_naive = mase(y_true_valid, naive_valid, train_series=train_series, m=24)
-
-            metrics.append(
-                {
-                    "horizon_h": h,
-                    "rmse_model": float(rmse_model),
-                    "rmse_naive": float(rmse_naive),
-                    "mase_model": float(mase_model),
-                    "mase_naive": float(mase_naive),
-                }
-            )
-
-    # Summary metrics
-    if metrics:
-        metric_summary = {
-            "rmse_model_avg": float(np.mean([m["rmse_model"] for m in metrics])),
-            "rmse_naive_avg": float(np.mean([m["rmse_naive"] for m in metrics])),
-            "mase_model_avg": float(np.mean([m["mase_model"] for m in metrics])),
-            "mase_naive_avg": float(np.mean([m["mase_naive"] for m in metrics])),
-        }
-    else:
-        metric_summary = {}
-        logger.error("No metrics computed")
-
-    # Save results
-    (out_dir / "metrics_test.json").write_text(json.dumps(metrics, indent=2))
-    (out_dir / "metrics_summary.json").write_text(json.dumps(metric_summary, indent=2))
-    logger.info(f"Average RMSE: {metric_summary.get('rmse_model_avg', 0):.4f}")
-    logger.info(f"Average MASE: {metric_summary.get('mase_model_avg', 0):.4f}")
-
-    # Save config
-    config = {
-        "seq_len": args.seq_len,
-        "horizon": args.horizon,
-        "d_model": args.d_model,
-        "num_heads": args.num_heads,
-        "num_layers": args.num_layers,
-        "dim_feedforward": args.dim_feedforward,
-        "dropout": args.dropout,
-        "learning_rate": args.learning_rate,
-        "weight_decay": args.weight_decay,
-        "batch_size": args.batch_size,
-        "pv_lag_features": pv_lag_features,
-        "weather_lag_features": weather_lag_features,
-        "forecast_features": forecast_features,
-    }
-    (out_dir / "config.json").write_text(json.dumps(config, indent=2))
 
     # Save scalers for inference
     scalers = {
         "pv_scaler": pv_scaler,
         "weather_scaler": weather_scaler,
-        "forecast_scaler": forecast_scaler,
+        "forecast_scaler_cont": forecast_scaler_cont,
         "target_scaler": target_scaler,
     }
     with open(out_dir / "scalers.pkl", "wb") as f:
         pickle.dump(scalers, f)
     logger.info("Saved scalers for inference")
 
+
+    # Log per data leakage: controlla se target è tra le feature di input
+    input_features = set(pv_lag_features + weather_lag_features + forecast_features)
+    if target in input_features:
+        logger.warning(f"POSSIBILE DATA LEAKAGE: la colonna target '{target}' è tra le feature di input!")
+    else:
+        logger.info("Nessun data leakage rilevato tra le feature di input.")
     logger.info("Multi-Branch Transformer training completed successfully")
 
 

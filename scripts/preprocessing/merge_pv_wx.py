@@ -14,6 +14,7 @@ Usage:
 """
 from __future__ import annotations
 
+from datetime import timedelta, timezone
 from pathlib import Path
 import argparse
 import sys
@@ -22,9 +23,18 @@ import sys
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pv-csv", default="data/processed/merged/pv_combined.csv")
-    ap.add_argument("--wx-csv", default="data/processed/merged/wx_combined.csv")
+    ap.add_argument("--wx-csv", default="data/processed/merged/wx_combined_utc.csv")
     ap.add_argument("--out", default="data/processed/merged/pv_wx_combined.csv")
     ap.add_argument("--local-tz", default="Australia/Sydney")
+    ap.add_argument(
+        "--fixed-offset-minutes",
+        type=int,
+        default=None,
+        help=(
+            "Treat PV timestamps as a fixed offset (no DST). "
+            "Example: 600 for UTC+10 if the logger never adjusts for daylight savings."
+        ),
+    )
     args = ap.parse_args()
 
     try:
@@ -32,7 +42,7 @@ def main() -> None:
     except Exception as e:
         raise SystemExit("pandas not available. Activate venv and install pandas.") from e
 
-    from pv_forecasting.timeutils import localize_pv_index, parse_wx_index_with_tz, to_utc
+    from pv_forecasting.timeutils import localize_pv_index, to_utc
     from pv_forecasting.data import align_hourly
 
     pv_path = Path(args.pv_csv)
@@ -53,10 +63,30 @@ def main() -> None:
     pv_val_col = pv_cols[1]
 
     # Localize PV timestamps (assumed naive local times) using robust DST handling
-    pv_idx = localize_pv_index(pv[pv_ts_col], args.local_tz)
+    if args.fixed_offset_minutes is not None:
+        # Some loggers never adjust for DST; use a fixed offset to avoid collapsing hours
+        pv_idx = pd.DatetimeIndex(pd.to_datetime(pv[pv_ts_col], utc=False, errors="coerce")).tz_localize(
+            timezone(timedelta(minutes=args.fixed_offset_minutes))
+        )
+    else:
+        pv_idx = localize_pv_index(pv[pv_ts_col], args.local_tz)
+    pv_idx = pv_idx.tz_convert("UTC")
+
+    # Warn if localization collapsed rows (DST jump)
+    dup_mask = pv_idx.duplicated()
+    if dup_mask.any():
+        dup_times = pv_idx[dup_mask].unique()
+        print(
+            (
+                f"Warning: found {dup_mask.sum()} duplicate PV timestamps after localization: "
+                f"{dup_times.tolist()}.\n"
+                "If your logger does not observe DST, rerun with --fixed-offset-minutes (e.g., 600 for UTC+10)."
+            ),
+            file=sys.stderr,
+        )
+
     # Use .values to avoid pandas aligning the numeric Series by its integer index
     pv_df = pd.DataFrame({"pv": pd.to_numeric(pv[pv_val_col], errors="coerce").values}, index=pv_idx)
-    pv_df.index = pv_df.index.tz_convert("UTC")
     pv_df = pv_df[~pv_df.index.duplicated(keep="first")]
 
     # Read WX CSV and parse timezone-aware timestamps
@@ -64,9 +94,9 @@ def main() -> None:
     wx_cols = wx.columns.tolist()
     if len(wx_cols) < 2:
         raise SystemExit("WX CSV seems invalid")
-    wx_ts_col = wx_cols[0]
-    # parse weather timestamps with tz
-    wx_idx = parse_wx_index_with_tz(wx[wx_ts_col])
+    wx_ts_col = "dt_utc" if "dt_utc" in wx_cols else wx_cols[0]
+    # parse weather timestamps as UTC
+    wx_idx = pd.to_datetime(wx[wx_ts_col], utc=True)
     # Keep other columns. Do NOT coerce weather_description to numeric — keep as string.
     wx_data = wx.drop(columns=[wx_ts_col])
     from collections import Counter

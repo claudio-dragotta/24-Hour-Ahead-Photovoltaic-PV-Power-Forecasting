@@ -11,9 +11,57 @@ Accurate forecasting of photovoltaic (PV) power generation is crucial for effici
 
 The system currently implements a state-of-the-art Multi-Branch Transformer architecture with hierarchical attention fusion, designed to leverage the distinct characteristics of PV history, weather history, and future weather forecasts through separate processing pathways.
 
+![Multi-Branch Transformer architecture](figures/multi_branch_transformer_architecture_legend.svg)
+
+## Table of Contents
+
+- [Recent Updates (April 2026)](#recent-updates-april-2026)
+- [Quick Start (Recommended Pipeline)](#quick-start-recommended-pipeline)
+- [Legacy models (kept for reference)](#legacy-models-kept-for-reference)
+- [Historical Improvements (December 2025)](#historical-improvements-december-2025)
+- [Seed Optimization Study (January 2026)](#seed-optimization-study-january-2026)
+- [Final Model Performance (Seed 2)](#final-model-performance-seed-2)
+- [Generated Visualizations](#generated-visualizations)
+- [Repository Structure](#repository-structure)
+- [Usage](#usage)
+- [Project Information](#project-information)
+
 ---
 
-## 🚀 Recent Improvements (December 2024)
+## Recent Updates (April 2026)
+
+- **Data merge**: `scripts/preprocessing/merge_pv_wx.py` now supports `--fixed-offset-minutes` (UTC+10 used) to avoid DST-collapsed PV hours; `data/processed/merged/pv_wx_combined.csv` is regenerated with all PV rows.
+- **Preprocessing**: canonical pipeline is `scripts/preprocessing/preprocess_to_parquet.py` (drops all-NaN cols like `dt_iso`, fills `rain_1h`/`clouds_all`, removes constant cols, one-hot weather, scales numeric only, builds 24/24 windows) producing `data/processed/merged/pv_wx_combined.parquet`.
+- **Training**: `scripts/training/train_multi_branch.py` now uses a chronological validation slice from the tail of the training set (`--val-ratio`, default 0.1) and always seeds with **2** internally (no `--seed` arg).
+- **Inference**: legacy `scripts/inference/*` removed; old ensemble/inference sections below are kept for reference but are deprecated.
+
+## Quick Start (Recommended Pipeline)
+
+1. **Preprocess data (UTC+10 fixed offset to avoid DST collapse)**  
+   ```bash
+   .venv/bin/python scripts/preprocessing/merge_pv_wx.py --fixed-offset-minutes 600
+   .venv/bin/python scripts/preprocessing/preprocess_to_parquet.py
+   ```
+   Output: `data/processed/merged/pv_wx_combined.parquet`.
+
+2. **Train Multi-Branch Transformer (seed fixed to 2 inside the script)**  
+   ```bash
+   .venv/bin/python scripts/training/train_multi_branch.py \
+     --processed-path data/processed/merged/pv_wx_combined.parquet \
+     --outdir outputs/multi_branch/baseline \
+     --val-ratio 0.1 \
+     --d-model 256 --num-heads 4 --num-layers 2 --dropout 0.2 --epochs 100
+   ```
+
+3. **Validate / test**  
+   - Validation is the tail `val-ratio` slice (chronological).  
+   - For a held-out test parquet, load the trained model in a custom script/notebook (legacy CLI inference scripts are deprecated/removed).
+
+### Legacy models (kept for reference)
+
+Older pipelines (LightGBM, CNN-BiLSTM, TFT, ensemble) remain documented for reproducibility and comparison, but the recommended path is the current Multi-Branch Transformer (seed=2, `train_multi_branch.py`). Use the legacy commands only if you need to replicate past experiments.
+
+## Historical Improvements (December 2025)
 
 ### Architecture Migration: From Ensemble to Multi-Branch Transformer
 
@@ -55,7 +103,7 @@ The system currently implements a state-of-the-art Multi-Branch Transformer arch
 
 | Model | RMSE (kW) | nRMSE (%) ↓ | MASE ↓ | Improvement |
 |-------|-----------|-------------|--------|-------------|
-| **Multi-Branch Transformer** | **3.31** | **4.80%** | 0.46 | **-10.8% RMSE** ✅ |
+| **Multi-Branch Transformer** | **3.31** | **4.80%** | 0.46 | **-10.8% RMSE**  |
 | TFT (Baseline) | 3.71 | 5.38% | 0.43 | Reference |
 
 - **nRMSE: 4.80%** (normalized by 68.92 kW capacity) - **Excellent for 24h-ahead** forecasting
@@ -68,7 +116,7 @@ The system currently implements a state-of-the-art Multi-Branch Transformer arch
 
 ---
 
-### 🔬 Seed Optimization Study (January 2026)
+### Seed Optimization Study (January 2026)
 
 To ensure reproducibility and find the optimal random initialization, we conducted an extensive **100-seed search** experiment.
 
@@ -92,9 +140,9 @@ To ensure reproducibility and find the optimal random initialization, we conduct
 
 | Rank | Seed | MASE | RMSE (kW) |
 |------|------|------|-----------|
-| 🥇 | **2** | **0.4455** | **3.23** |
-| 🥈 | 42 | 0.4634 | 3.31 |
-| 🥉 | 114 | 0.4662 | 3.36 |
+| 1 | **2** | **0.4455** | **3.23** |
+| 2 | 42 | 0.4634 | 3.31 |
+| 3 | 114 | 0.4662 | 3.36 |
 | 4 | 176 | 0.4665 | 3.27 |
 | 5 | 78 | 0.4673 | 3.33 |
 | 6 | 130 | 0.4727 | 3.44 |
@@ -111,16 +159,15 @@ To ensure reproducibility and find the optimal random initialization, we conduct
 
 **Recommended Configuration:**
 ```bash
-# Train with optimal seed
+# Train with optimal seed (fixed to 2 inside the script)
 python scripts/training/train_multi_branch.py \
-  --seed 2 \
   --processed-path outputs/processed.parquet \
   --outdir outputs/multi_branch/final
 ```
 
 ---
 
-### 📊 Final Model Performance (Seed 2)
+### Final Model Performance (Seed 2)
 
 After selecting seed 2 as the optimal configuration, we generated final predictions on the test set.
 
@@ -138,7 +185,7 @@ After selecting seed 2 as the optimal configuration, we generated final predicti
 | Horizon | RMSE (kW) | MASE | Notes |
 |---------|-----------|------|-------|
 | h=1-6 | 3.1-3.4 | 0.44-0.48 | Short-term |
-| h=7-12 | 2.9-3.2 | 0.39-0.44 | **Best performance** ⭐ |
+| h=7-12 | 2.9-3.2 | 0.39-0.44 | **Best performance**  |
 | h=13-18 | 3.0-3.6 | 0.41-0.49 | Mid-term |
 | h=19-23 | 2.9-3.4 | 0.41-0.50 | Stable |
 | h=24 | 4.4 | 0.62 | Longest horizon |
@@ -156,7 +203,7 @@ After selecting seed 2 as the optimal configuration, we generated final predicti
 
 ---
 
-### 📈 Generated Visualizations
+### Generated Visualizations
 
 All plots are saved in `outputs/plots/` and can be regenerated with:
 ```bash
@@ -197,6 +244,7 @@ python scripts/visualization/generate_comparison_plots.py
 # Train Multi-Branch Transformer
 python scripts/training/train_multi_branch.py \
   --processed-path outputs/processed.parquet \
+  --val-ratio 0.1 \
   --outdir outputs/multi_branch/baseline \
   --d-model 256 \
   --num-heads 4 \
@@ -297,10 +345,10 @@ See [EXPERIMENTS.md](EXPERIMENTS.md) for detailed comparison plan and [METRICS_A
 
 | Model | Architecture | Epochs | Best Val Loss | Test RMSE | Test MAE | Output Directory | Status |
 |-------|--------------|--------|---------------|-----------|----------|------------------|--------|
-| **TFT Baseline** | Temporal Fusion Transformer | 29 (early stop) | 3.549 | **3.7060** | 2.3254 | `outputs/tft/baseline/` | ✅ Completed |
-| **CNN-BiLSTM Baseline** | 3-layer CNN (64→128→256) + BiLSTM(128) | 49 (early stop) | 18.8721 | 3.7267 | 2.3294 | `outputs/cnn/baseline/` | ✅ Completed |
-| **CNN-BiLSTM Fusion** | 3-branch fusion + attention | 55 (early stop) | - | 4.364 | - | `outputs/cnn/fusion_attention/` | ⚠️ Overfitted |
-| **LightGBM** | 24 separate models (one per horizon) | - | - | - | - | `outputs/lgbm/baseline/` | 🚧 Pending |
+| **TFT Baseline** | Temporal Fusion Transformer | 29 (early stop) | 3.549 | **3.7060** | 2.3254 | `outputs/tft/baseline/` |  Completed |
+| **CNN-BiLSTM Baseline** | 3-layer CNN (64→128→256) + BiLSTM(128) | 49 (early stop) | 18.8721 | 3.7267 | 2.3294 | `outputs/cnn/baseline/` |  Completed |
+| **CNN-BiLSTM Fusion** | 3-branch fusion + attention | 55 (early stop) | - | 4.364 | - | `outputs/cnn/fusion_attention/` | Warning: Overfitted |
+| **LightGBM** | 24 separate models (one per horizon) | - | - | - | - | `outputs/lgbm/baseline/` |  Pending |
 
 ### Key Observations
 
@@ -324,8 +372,8 @@ We tested alternative TFT configurations to find optimal model capacity:
 
 | Configuration | Hidden Size | Attention Heads | Dropout | Parameters | Test RMSE | Test MASE | Result |
 |---------------|-------------|-----------------|---------|------------|-----------|-----------|--------|
-| **Baseline (Best)** | 32 | 2 | 0.4 | 176K | **3.7060** | **0.4254** | ✅ Optimal |
-| Larger Capacity | 64 | 4 | 0.25 | 613K | 5.0741 | 0.7766 | ❌ Overfitting |
+| **Baseline (Best)** | 32 | 2 | 0.4 | 176K | **3.7060** | **0.4254** |  Optimal |
+| Larger Capacity | 64 | 4 | 0.25 | 613K | 5.0741 | 0.7766 |  Overfitting |
 
 **Key Finding**: Despite 3.5× more parameters, the larger model overfits and performs **37% worse** (RMSE 5.07 vs 3.71). The baseline configuration with **stronger regularization** (dropout=0.4) and **smaller capacity** (hidden=32) generalizes much better to test data.
 
@@ -678,15 +726,7 @@ output_df = pd.DataFrame(
 output_df.to_csv("predictions/forecast_24h.csv", index=False)
 ```
 
-**Option B: Using Command-Line Script**
-
-```bash
-python scripts/inference/predict.py \
-  --input-pv new_pv_data.xlsx \
-  --input-wx new_wx_data.xlsx \
-  --ensemble-weights outputs_ensemble/ensemble_weights.json \
-  --outdir predictions
-```
+**Option B (deprecated):** `scripts/inference/predict.py` has been removed. Use your own inference script/notebook to load the trained model and generate forecasts.
 
 **Output format:**
 ```csv
@@ -810,8 +850,6 @@ ensemble = EnsembleModel.from_outputs('outputs_ensemble')
 │   │   ├── train_cnn_bilstm.py    # CNN-BiLSTM training
 │   │   ├── train_cnn_baseline.sh  # Helper: CNN with baseline features
 │   │   └── train_cnn_lag72.sh     # Helper: CNN with 3-day lag features
-│   ├── inference/                 # Prediction/deployment
-│   │   └── predict.py             # Inference script
 │   └── evaluation/                # Model evaluation
 │       └── ensemble.py            # Ensemble optimization (flexible 2-6 models)
 │
@@ -1189,17 +1227,7 @@ python scripts/ensemble.py \
 ```
    - Cerca il peso TFT che minimizza RMSE, salva blend e metriche in `outputs_ensemble/`.
 
-5) **Inference (new dataset)**
-```bash
-python scripts/inference/predict.py \
-  --pv-path data/raw/pv_dataset.xlsx \
-  --wx-path data/raw/wx_dataset.xlsx \
-  --future-wx-path <opzionale NWP> \
-  --lgbm-dir outputs_lgbm \
-  --tft-ckpt outputs_tft/tft-best.ckpt \
-  --ensemble-weights outputs_ensemble/ensemble_weights.json
-```
-   - Auto‑switch con/senza meteo future; genera `outputs_predictions/predictions_next24.csv`.
+5) **Inference (deprecated)**: `scripts/inference/predict.py` è stato rimosso. Esegui inference caricando i modelli in uno script/notebook personalizzato.
 
 ---
 
@@ -1332,12 +1360,7 @@ python scripts/evaluation/ensemble.py \
 
 Previsione day-ahead (auto-switch con/senza meteo future se forniti):
 
-```bash
-python scripts/inference/predict.py \
-  --pv-path data/raw/pv_dataset.xlsx \
-  --wx-path data/raw/wx_dataset.xlsx \
-  --future-wx-path <opzionale>
-```
+> Deprecated: `scripts/inference/predict.py` è stato rimosso. Carica il modello/ensemble in uno script o notebook personalizzato per generare le previsioni.
 
 ### Data Preparation
 
@@ -1474,7 +1497,7 @@ Notes:
 - Models: `outputs/model_lgbm/*.bin`, `outputs/model_tft/*.ckpt`.
 - Data artifacts: `outputs/processed.parquet`, scalers/encoders.
 - Predictions and metrics: per‑fold CSVs, final `predictions_test.csv`.
-- A `predict.py` script will load the final models and produce predictions from new test data with automatic mode detection.
+- (Legacy) `scripts/inference/predict.py` has been removed; run inference by loading the trained model in your own script/notebook.
 
 ---
 
@@ -1889,12 +1912,8 @@ python scripts/data/preprocess_data.py \
   --wx-path new_wx.xlsx \
   --output-path new_processed.parquet
 
-# 2. Run inference
-python scripts/inference/predict.py \
-  --processed-data new_processed.parquet \
-  --ensemble-weights outputs_ensemble/ensemble_weights.json \
-  --model-dir outputs/<model>/legacy_* \
-  --outdir predictions_new
+# 2. Run inference (deprecated CLI: scripts/inference/predict.py removed)
+# Use a custom script/notebook to load the trained ensemble and predict.
 ```
 
 #### Scenario B: Python Script
