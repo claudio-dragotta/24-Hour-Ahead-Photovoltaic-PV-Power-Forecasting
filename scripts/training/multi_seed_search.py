@@ -124,7 +124,7 @@ class SeedSearchTracker:
 
         if mase_val < self.best_mase:
             self.best_mase = mase_val
-            logger.info(f"🎯 NEW BEST! Seed {seed} with MASE {mase_val:.4f}")
+            logger.info(f"NEW BEST! Seed {seed} with MASE {mase_val:.4f}")
 
         self._save_results()
         self._cleanup_checkpoints()

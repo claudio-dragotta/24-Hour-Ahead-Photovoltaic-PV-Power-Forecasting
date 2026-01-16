@@ -12,6 +12,7 @@ import torch.optim as optim
 from lightning.pytorch import LightningModule
 
 from pv_forecasting.models.layers import PositionalEncoding, SoftAttention
+from pv_forecasting.models.weighted_loss import PeakWeightedMSELoss
 
 
 class MultiBranchTransformer(LightningModule):
@@ -73,6 +74,11 @@ class MultiBranchTransformer(LightningModule):
         weight_decay: float = 1e-4,
         temporal_compression: str = "pooling",  # "pooling", "adaptive", "classic"
         interp_factor: int = None,
+        use_sigmoid_output: bool = True,
+        clamp_output_max: float | None = None,
+        loss_type: str = "mse",
+        peak_threshold: float = 0.6,
+        peak_weight: float = 3.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -91,10 +97,20 @@ class MultiBranchTransformer(LightningModule):
         self.weight_decay = weight_decay
         self.temporal_compression = temporal_compression
         self.interp_factor = interp_factor
+        self.use_sigmoid_output = use_sigmoid_output
+        self.clamp_output_max = clamp_output_max
+        self.loss_type = loss_type
+
+        # Initialize loss function based on loss_type
+        if loss_type == "peak_weighted":
+            self.loss_fn = PeakWeightedMSELoss(peak_threshold=peak_threshold, peak_weight=peak_weight)
+        else:
+            self.loss_fn = nn.MSELoss()
 
         # Branch 1: PV Production History
-        # Processes historical PV lag features (e.g., lag1, lag24, lag168)
+        # Embedding layer for PV features
         self.pv_embedding = nn.Linear(n_pv_features, d_model)
+        self.pv_conv = nn.Conv1d(in_channels=d_model, out_channels=d_model, kernel_size=3, padding=1)
         self.pv_pos_encoder = PositionalEncoding(d_model, max_len=seq_len_encoder, dropout=dropout)
         pv_encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
@@ -108,8 +124,9 @@ class MultiBranchTransformer(LightningModule):
         self.pv_transformer = nn.TransformerEncoder(pv_encoder_layer, num_layers=num_layers)
 
         # Branch 2: Historical Weather
-        # Processes historical weather lag features (e.g., ghi_lag1, temp_lag24)
+        # Embedding layer for weather history features
         self.weather_hist_embedding = nn.Linear(n_hist_weather_features, d_model)
+        self.weather_hist_conv = nn.Conv1d(in_channels=d_model, out_channels=d_model, kernel_size=3, padding=1)
         self.weather_hist_pos_encoder = PositionalEncoding(d_model, max_len=seq_len_encoder, dropout=dropout)
         weather_hist_encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
@@ -123,8 +140,9 @@ class MultiBranchTransformer(LightningModule):
         self.weather_hist_transformer = nn.TransformerEncoder(weather_hist_encoder_layer, num_layers=num_layers)
 
         # Branch 3: Future Weather Forecast
-        # Processes day-ahead weather predictions (e.g., NWP forecasts)
+        # Embedding layer for weather forecast features
         self.weather_forecast_embedding = nn.Linear(n_forecast_weather_features, d_model)
+        self.weather_forecast_conv = nn.Conv1d(in_channels=d_model, out_channels=d_model, kernel_size=1, padding=0)
         self.weather_forecast_pos_encoder = PositionalEncoding(d_model, max_len=seq_len_decoder, dropout=dropout)
         weather_forecast_encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
@@ -139,9 +157,15 @@ class MultiBranchTransformer(LightningModule):
 
         # Temporal compression/interpolation modules
         if self.temporal_compression == "adaptive":
-            self.pv_temporal_compression = nn.Linear(seq_len_encoder, 1 if self.interp_factor is None else self.interp_factor)
-            self.weather_hist_temporal_compression = nn.Linear(seq_len_encoder, 1 if self.interp_factor is None else self.interp_factor)
-            self.weather_forecast_temporal_compression = nn.Linear(seq_len_decoder, 1 if self.interp_factor is None else self.interp_factor)
+            self.pv_temporal_compression = nn.Linear(
+                seq_len_encoder, 1 if self.interp_factor is None else self.interp_factor
+            )
+            self.weather_hist_temporal_compression = nn.Linear(
+                seq_len_encoder, 1 if self.interp_factor is None else self.interp_factor
+            )
+            self.weather_forecast_temporal_compression = nn.Linear(
+                seq_len_decoder, 1 if self.interp_factor is None else self.interp_factor
+            )
         elif self.temporal_compression == "classic":
             # Motivazione della scelta di interp_factor e della matrice di interpolazione:
             # I valori sono scelti per riflettere la struttura temporale del forecasting, come validato in letteratura e in applicazioni simili.
@@ -154,13 +178,13 @@ class MultiBranchTransformer(LightningModule):
                 s = factor * t / seq_len_encoder
                 for m in range(1, seq_len_encoder + 1):
                     W_enc[t - 1, m - 1] = pow(1 - abs(s - m) / seq_len_encoder, 2)
-            self.register_buffer('W_enc', W_enc)
+            self.register_buffer("W_enc", W_enc)
             W_dec = torch.zeros((seq_len_decoder, seq_len_decoder))
             for t in range(1, seq_len_decoder + 1):
                 s = factor * t / seq_len_decoder
                 for m in range(1, seq_len_decoder + 1):
                     W_dec[t - 1, m - 1] = pow(1 - abs(s - m) / seq_len_decoder, 2)
-            self.register_buffer('W_dec', W_dec)
+            self.register_buffer("W_dec", W_dec)
         else:
             # Default: learnable pooling (as prima)
             self.pv_temporal_pooling = nn.Linear(seq_len_encoder, 1)
@@ -190,18 +214,21 @@ class MultiBranchTransformer(LightningModule):
         weather_fcst = batch["weather_forecast"]  # (B, T_dec, F_wx_fcst)
 
         # Branch 1: Process PV history
-        pv_emb = self.pv_embedding(pv_hist)  # (B, T_enc, d_model)
-        pv_emb = self.pv_pos_encoder(pv_emb)
+        pv_embedded = self.pv_embedding(pv_hist)  # (B, T_enc, d_model)
+        pv_conv = self.pv_conv(pv_embedded.permute(0, 2, 1))  # (B, d_model, T_enc)
+        pv_emb = self.pv_pos_encoder(pv_conv.permute(0, 2, 1))
         pv_encoded = self.pv_transformer(pv_emb)  # (B, T_enc, d_model)
 
         # Branch 2: Process weather history
-        wx_hist_emb = self.weather_hist_embedding(weather_hist)  # (B, T_enc, d_model)
-        wx_hist_emb = self.weather_hist_pos_encoder(wx_hist_emb)
+        wx_hist_embedded = self.weather_hist_embedding(weather_hist)  # (B, T_enc, d_model)
+        wx_hist_conv = self.weather_hist_conv(wx_hist_embedded.permute(0, 2, 1))
+        wx_hist_emb = self.weather_hist_pos_encoder(wx_hist_conv.permute(0, 2, 1))
         wx_hist_encoded = self.weather_hist_transformer(wx_hist_emb)  # (B, T_enc, d_model)
 
         # Branch 3: Process future weather forecast
-        wx_fcst_emb = self.weather_forecast_embedding(weather_fcst)  # (B, T_dec, d_model)
-        wx_fcst_emb = self.weather_forecast_pos_encoder(wx_fcst_emb)
+        wx_fcst_embedded = self.weather_forecast_embedding(weather_fcst)  # (B, T_dec, d_model)
+        wx_fcst_conv = self.weather_forecast_conv(wx_fcst_embedded.permute(0, 2, 1))
+        wx_fcst_emb = self.weather_forecast_pos_encoder(wx_fcst_conv.permute(0, 2, 1))
         wx_fcst_encoded = self.weather_forecast_transformer(wx_fcst_emb)  # (B, T_dec, d_model)
 
         # Temporal compression/interpolazione
@@ -238,7 +265,10 @@ class MultiBranchTransformer(LightningModule):
 
         # Final output: 24-hour forecast
         output = self.fc_output(fusion2_output)  # (B, 24)
-        output = torch.sigmoid(output)  # Constrain to [0, 1] for normalized PV
+        if self.use_sigmoid_output:
+            output = torch.sigmoid(output)
+        if self.clamp_output_max is not None:
+            output = torch.clamp(output, min=0.0, max=self.clamp_output_max)
 
         return output
 
@@ -256,7 +286,7 @@ class MultiBranchTransformer(LightningModule):
         """
         features, targets = batch
         predictions = self(features)
-        loss = nn.functional.mse_loss(predictions, targets)
+        loss = self.loss_fn(predictions, targets)
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
@@ -299,7 +329,13 @@ class MultiBranchTransformer(LightningModule):
             Optimizer and scheduler configuration dictionary.
         """
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.2, patience=10, min_lr=5e-5)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=0.2,
+            patience=8,
+            min_lr=5e-5,
+        )
         return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "monitor": "val_loss"}}
 
     def predict_step(self, batch: tuple, batch_idx: int) -> torch.Tensor:

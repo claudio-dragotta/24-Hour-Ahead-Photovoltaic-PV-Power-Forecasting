@@ -1,0 +1,55 @@
+digraph MultiBranchTransformer {
+    rankdir=TB;
+    node [shape=box, style="rounded,filled", fontname="Arial", penwidth=2, color="#000000"];
+    edge [penwidth=2, color="#000000", arrowsize=1.2];
+    bgcolor="transparent";
+
+    subgraph cluster_pv {
+        label="";
+        fontcolor="#000000";
+        pv_input [label="PV History\n[batch, seq_len_encoder, n_pv_features]", fillcolor="#50e3c2"];
+        pv_linear [label="Linear Embedding", fillcolor="#50e3c2"];
+        pv_conv [label="Conv1D (k=3)\nPattern locali", fillcolor="#50e3c2"];
+        pv_pos [label="Positional Encoding", fillcolor="#50e3c2"];
+        pv_transformer [label="Transformer Encoder", fillcolor="#50e3c2"];
+        pv_compression [label="Temporal Compression/Interpolazione\n(Pooling / Adaptive / Classic)\nAggrega la sequenza in un vettore", fillcolor="#4a90e2", fontcolor="#ffffff", style="filled,bold", penwidth=2];
+        pv_input -> pv_linear -> pv_conv -> pv_pos -> pv_transformer -> pv_compression;
+    }
+
+    subgraph cluster_wx_hist {
+        label="";
+        fontcolor="#000000";
+        wx_hist_input [label="Weather History\n[batch, seq_len_encoder, n_hist_weather_features]", fillcolor="#b8e986"];
+        wx_hist_linear [label="Linear Embedding", fillcolor="#b8e986"];
+        wx_hist_conv [label="Conv1D (k=3)\nPattern locali", fillcolor="#b8e986"];
+        wx_hist_pos [label="Positional Encoding", fillcolor="#b8e986"];
+        wx_hist_transformer [label="Transformer Encoder", fillcolor="#b8e986"];
+        wx_hist_compression [label="Temporal Compression/Interpolazione\n(Pooling / Adaptive / Classic)\nAggrega la sequenza in un vettore", fillcolor="#4a90e2", fontcolor="#ffffff", style="filled,bold", penwidth=2];
+        wx_hist_input -> wx_hist_linear -> wx_hist_conv -> wx_hist_pos -> wx_hist_transformer -> wx_hist_compression;
+    }
+
+    subgraph cluster_wx_fcst {
+        label="";
+        fontcolor="#000000";
+        wx_fcst_input [label="Weather Forecast\n[batch, seq_len_decoder, n_forecast_weather_features]", fillcolor="#f5a623"];
+        wx_fcst_linear [label="Linear Embedding", fillcolor="#f5a623"];
+        wx_fcst_conv [label="Conv1D (k=1)\nMix canali", fillcolor="#f5a623"];
+        wx_fcst_pos [label="Positional Encoding", fillcolor="#f5a623"];
+        wx_fcst_transformer [label="Transformer Encoder", fillcolor="#f5a623"];
+        wx_fcst_compression [label="Temporal Compression/Interpolazione\n(Pooling / Adaptive / Classic)\nAggrega la sequenza in un vettore", fillcolor="#4a90e2", fontcolor="#ffffff", style="filled,bold", penwidth=2];
+        wx_fcst_input -> wx_fcst_linear -> wx_fcst_conv -> wx_fcst_pos -> wx_fcst_transformer -> wx_fcst_compression;
+    }
+
+    fusion1 [label="Soft Attention\n(PV + Weather History)", shape=ellipse, fillcolor="#ffd54f", style="filled,bold", penwidth=2];
+    fc1 [label="FC (refine)", shape=box, fillcolor="#fffde7", style="filled,bold", penwidth=2];
+    fusion2 [label="Soft Attention\n(Stage 1 + Weather Forecast)", shape=ellipse, fillcolor="#ffd54f", style="filled,bold", penwidth=2];
+    fc2 [label="Linear Output\n24h forecast", shape=box, fillcolor="#f8bbd0", style="filled,bold", penwidth=2];
+    sigmoid [label="Sigmoid / Clamp (optional)\nNormalized Output", shape=box, fillcolor="#fce4ec", style="filled,bold", penwidth=2];
+
+    // Flusso architetturale esplicito
+    pv_compression -> fusion1;
+    wx_hist_compression -> fusion1;
+    wx_fcst_compression -> fusion2;
+    fusion1 -> fc1 -> fusion2 -> fc2 -> sigmoid;
+    {rank=same; pv_compression; wx_hist_compression; wx_fcst_compression;}
+}

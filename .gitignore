@@ -112,13 +112,8 @@ tmp/
 temp/
 *.tmp
 htmlcov/
+.gitattributes
 
 # Documentation build
 docs/_build/
 site/
-# METRICS_ANALYSIS.md
-.claude/
-
-
-test/
-extra/

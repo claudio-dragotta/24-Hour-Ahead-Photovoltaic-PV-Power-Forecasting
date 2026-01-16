@@ -100,13 +100,14 @@ def main() -> None:
     # Keep other columns. Do NOT coerce weather_description to numeric — keep as string.
     wx_data = wx.drop(columns=[wx_ts_col])
     from collections import Counter
+
     # Convert numeric where appropriate, but preserve columns containing 'weather' and 'description'
     for c in wx_data.columns:
-        if 'weather' in c.lower() and 'description' in c.lower():
+        if "weather" in c.lower() and "description" in c.lower():
             # keep as-is (string)
             continue
         try:
-            wx_data[c] = pd.to_numeric(wx_data[c], errors='coerce')
+            wx_data[c] = pd.to_numeric(wx_data[c], errors="coerce")
         except Exception:
             pass
     # If duplicate column labels exist (e.g., weather_description from multiple sheets),

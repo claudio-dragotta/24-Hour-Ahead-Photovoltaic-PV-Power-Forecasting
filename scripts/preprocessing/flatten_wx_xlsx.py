@@ -46,7 +46,6 @@ def main() -> None:
     xlsx_out = out_dir / "wx_combined_single_sheet.xlsx"
     csv_out = out_dir / "wx_combined_single_sheet.csv"
 
-
     # IMPORTANT: do not modify column A (first column) or any timestamps — keep raw values.
     # The combined dataframe preserves the original cell text as read by openpyxl/pandas.
 

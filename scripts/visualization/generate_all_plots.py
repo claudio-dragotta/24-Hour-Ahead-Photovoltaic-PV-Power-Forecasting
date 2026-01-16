@@ -19,15 +19,17 @@ sns.set_palette("husl")
 PLOT_DIR = Path("outputs/plots")
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Load predictions
-print("Loading predictions...")
-pred_long = pd.read_csv("outputs/multi_branch/final_seed2/predictions_test_long.csv")
-pred_wide = pd.read_csv("outputs/multi_branch/final_seed2/predictions_test_wide.csv")
 
-with open("outputs/multi_branch/final_seed2/metrics_final.json") as f:
+# Load ensemble predictions
+print("Loading ensemble predictions...")
+pred_long = pd.read_csv("outputs/ensemble/ensemble_stacking.csv")
+pred_long = pred_long.rename(columns={"y_true_kw": "actual", "y_pred_kw": "prediction"})
+
+# Ensemble metrics
+with open("outputs/ensemble/ensemble_stacking_metrics.json") as f:
     metrics = json.load(f)
 
-print(f"Loaded {len(pred_long)} predictions")
+print(f"Loaded {len(pred_long)} ensemble predictions")
 
 
 def plot_1_actual_vs_predicted_scatter():
@@ -42,7 +44,7 @@ def plot_1_actual_vs_predicted_scatter():
 
     ax.set_xlabel("Actual Power (kW)", fontsize=12)
     ax.set_ylabel("Predicted Power (kW)", fontsize=12)
-    ax.set_title("Actual vs Predicted PV Power\nMulti-Branch Transformer (Seed 2)", fontsize=14)
+    ax.set_title("Actual vs Predicted PV Power\nEnsemble Stacking Model", fontsize=14)
     ax.legend()
     ax.set_xlim(0, max_val)
     ax.set_ylim(0, max_val)
@@ -61,38 +63,28 @@ def plot_1_actual_vs_predicted_scatter():
     plt.tight_layout()
     plt.savefig(PLOT_DIR / "01_actual_vs_predicted_scatter.png", dpi=150)
     plt.close()
-    print("✓ 01_actual_vs_predicted_scatter.png")
+    print("[OK] 01_actual_vs_predicted_scatter.png")
 
 
 def plot_2_error_distribution():
     """Histogram of prediction errors."""
     errors = pred_long["prediction"] - pred_long["actual"]
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig, ax = plt.subplots(figsize=(8, 5))
 
-    # Histogram
-    axes[0].hist(errors, bins=100, edgecolor="black", alpha=0.7, color="steelblue")
-    axes[0].axvline(0, color="red", linestyle="--", lw=2)
-    axes[0].axvline(errors.mean(), color="orange", linestyle="-", lw=2, label=f"Mean: {errors.mean():.2f}")
-    axes[0].set_xlabel("Prediction Error (kW)", fontsize=12)
-    axes[0].set_ylabel("Frequency", fontsize=12)
-    axes[0].set_title("Distribution of Prediction Errors", fontsize=14)
-    axes[0].legend()
-
-    # Box plot by horizon
-    errors_by_horizon = pred_long.copy()
-    errors_by_horizon["error"] = errors
-
-    sns.boxplot(data=errors_by_horizon, x="horizon", y="error", ax=axes[1], color="steelblue")
-    axes[1].axhline(0, color="red", linestyle="--", lw=1)
-    axes[1].set_xlabel("Forecast Horizon (hours)", fontsize=12)
-    axes[1].set_ylabel("Prediction Error (kW)", fontsize=12)
-    axes[1].set_title("Error Distribution by Horizon", fontsize=14)
+    # Histogram only
+    ax.hist(errors, bins=100, edgecolor="black", alpha=0.7, color="steelblue")
+    ax.axvline(0, color="red", linestyle="--", lw=2)
+    ax.axvline(errors.mean(), color="orange", linestyle="-", lw=2, label=f"Mean: {errors.mean():.2f}")
+    ax.set_xlabel("Prediction Error (kW)", fontsize=12)
+    ax.set_ylabel("Frequency", fontsize=12)
+    ax.set_title("Distribution of Prediction Errors", fontsize=14)
+    ax.legend()
 
     plt.tight_layout()
     plt.savefig(PLOT_DIR / "02_error_distribution.png", dpi=150)
     plt.close()
-    print("✓ 02_error_distribution.png")
+    print("[OK] 02_error_distribution.png")
 
 
 def plot_3_metrics_by_horizon():
@@ -124,7 +116,7 @@ def plot_3_metrics_by_horizon():
     plt.tight_layout()
     plt.savefig(PLOT_DIR / "03_metrics_by_horizon.png", dpi=150)
     plt.close()
-    print("✓ 03_metrics_by_horizon.png")
+    print("[OK] 03_metrics_by_horizon.png")
 
 
 def plot_4_sample_predictions():
@@ -157,7 +149,7 @@ def plot_4_sample_predictions():
     plt.tight_layout()
     plt.savefig(PLOT_DIR / "04_sample_predictions.png", dpi=150, bbox_inches="tight")
     plt.close()
-    print("✓ 04_sample_predictions.png")
+    print("[OK] 04_sample_predictions.png")
 
 
 def plot_5_heatmap_errors_by_hour():
@@ -182,7 +174,7 @@ def plot_5_heatmap_errors_by_hour():
     plt.tight_layout()
     plt.savefig(PLOT_DIR / "05_heatmap_errors.png", dpi=150)
     plt.close()
-    print("✓ 05_heatmap_errors.png")
+    print("[OK] 05_heatmap_errors.png")
 
 
 def plot_6_residuals_analysis():
@@ -232,7 +224,7 @@ def plot_6_residuals_analysis():
     plt.tight_layout()
     plt.savefig(PLOT_DIR / "06_residuals_analysis.png", dpi=150)
     plt.close()
-    print("✓ 06_residuals_analysis.png")
+    print("[OK] 06_residuals_analysis.png")
 
 
 def plot_7_seed_comparison():
@@ -282,7 +274,7 @@ def plot_7_seed_comparison():
     plt.tight_layout()
     plt.savefig(PLOT_DIR / "07_seed_comparison.png", dpi=150)
     plt.close()
-    print("✓ 07_seed_comparison.png")
+    print("[OK] 07_seed_comparison.png")
 
 
 def plot_8_daily_pattern():
@@ -316,7 +308,7 @@ def plot_8_daily_pattern():
     plt.tight_layout()
     plt.savefig(PLOT_DIR / "08_daily_pattern.png", dpi=150)
     plt.close()
-    print("✓ 08_daily_pattern.png")
+    print("[OK] 08_daily_pattern.png")
 
 
 def plot_9_error_percentiles():
@@ -348,104 +340,42 @@ def plot_9_error_percentiles():
     plt.tight_layout()
     plt.savefig(PLOT_DIR / "09_error_percentiles.png", dpi=150)
     plt.close()
-    print("✓ 09_error_percentiles.png")
+    print("[OK] 09_error_percentiles.png")
 
 
 def plot_10_summary_dashboard():
     """Summary dashboard with key metrics."""
-    fig = plt.figure(figsize=(16, 12))
-
-    # Layout: 2x3 grid
-    gs = fig.add_gridspec(2, 3, hspace=0.3, wspace=0.3)
-
-    # 1. Actual vs Predicted scatter (small)
-    ax1 = fig.add_subplot(gs[0, 0])
-    ax1.scatter(pred_long["actual"], pred_long["prediction"], alpha=0.05, s=3, c="steelblue")
-    max_val = max(pred_long["actual"].max(), pred_long["prediction"].max())
-    ax1.plot([0, max_val], [0, max_val], "r--", lw=1)
-    ax1.set_xlabel("Actual (kW)")
-    ax1.set_ylabel("Predicted (kW)")
-    ax1.set_title("Actual vs Predicted")
-
-    # 2. RMSE by horizon
-    ax2 = fig.add_subplot(gs[0, 1])
-    horizon_metrics = pd.DataFrame(metrics["horizon_metrics"])
-    ax2.bar(horizon_metrics["horizon"], horizon_metrics["rmse"], color="steelblue", edgecolor="black")
-    ax2.axhline(metrics["rmse"], color="red", linestyle="--", lw=1)
-    ax2.set_xlabel("Horizon (h)")
-    ax2.set_ylabel("RMSE (kW)")
-    ax2.set_title("RMSE by Horizon")
-    ax2.set_xticks(range(1, 25, 4))
-
-    # 3. MASE by horizon
-    ax3 = fig.add_subplot(gs[0, 2])
-    ax3.bar(horizon_metrics["horizon"], horizon_metrics["mase"], color="steelblue", edgecolor="black")
-    ax3.axhline(1.0, color="gray", linestyle=":", lw=1, label="Naive")
-    ax3.axhline(metrics["mase"], color="red", linestyle="--", lw=1)
-    ax3.set_xlabel("Horizon (h)")
-    ax3.set_ylabel("MASE")
-    ax3.set_title("MASE by Horizon")
-    ax3.set_xticks(range(1, 25, 4))
-
-    # 4. Error distribution
-    ax4 = fig.add_subplot(gs[1, 0])
-    errors = pred_long["prediction"] - pred_long["actual"]
-    ax4.hist(errors, bins=50, edgecolor="black", alpha=0.7, color="steelblue")
-    ax4.axvline(0, color="red", linestyle="--", lw=1)
-    ax4.set_xlabel("Error (kW)")
-    ax4.set_ylabel("Frequency")
-    ax4.set_title("Error Distribution")
-
-    # 5. Sample prediction
-    ax5 = fig.add_subplot(gs[1, 1])
-    sample_idx = pred_long["sample_idx"].unique()[100]
-    sample_data = pred_long[pred_long["sample_idx"] == sample_idx].sort_values("horizon")
-    ax5.plot(sample_data["horizon"], sample_data["actual"], "b-o", label="Actual", markersize=4)
-    ax5.plot(sample_data["horizon"], sample_data["prediction"], "r--s", label="Predicted", markersize=4)
-    ax5.set_xlabel("Horizon (h)")
-    ax5.set_ylabel("Power (kW)")
-    ax5.set_title("Sample Forecast")
-    ax5.legend(fontsize=8)
-    ax5.set_xticks(range(1, 25, 4))
-
-    # 6. Key metrics text box
-    ax6 = fig.add_subplot(gs[1, 2])
-    ax6.axis("off")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.axis("off")
 
     text = f"""
-    Multi-Branch Transformer
+    Ensemble Stacking Model
     ════════════════════════
-
-    Seed: 2 (optimal from 100)
 
     Overall Metrics:
     ─────────────────
     RMSE:  {metrics['rmse']:.3f} kW
     MASE:  {metrics['mase']:.3f}
-    nRMSE: {metrics['rmse']/68.92*100:.2f}%
+    R2:    {metrics['r2']:.3f}
+    MBE:   {metrics['mbe']:.3f}
 
-    Test Samples: {metrics['n_samples']:,}
-    Horizons: 24 hours
-
-    Best Horizon:  h=10 (MASE={horizon_metrics.loc[9, 'mase']:.3f})
-    Worst Horizon: h=24 (MASE={horizon_metrics.loc[23, 'mase']:.3f})
+    (Per-horizon metrics not disponibili)
     """
-    ax6.text(
+    ax.text(
         0.1,
         0.9,
         text,
-        transform=ax6.transAxes,
-        fontsize=12,
+        transform=ax.transAxes,
+        fontsize=14,
         verticalalignment="top",
         fontfamily="monospace",
         bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
     )
 
-    fig.suptitle("PV Power Forecasting - Final Model Summary", fontsize=16, fontweight="bold", y=0.98)
-
+    fig.suptitle("PV Power Forecasting - Ensemble Model Summary", fontsize=16, fontweight="bold", y=0.98)
     plt.savefig(PLOT_DIR / "10_summary_dashboard.png", dpi=150, bbox_inches="tight")
     plt.close()
-    print("✓ 10_summary_dashboard.png")
+    print("[OK] 10_summary_dashboard.png")
 
 
 def main():
@@ -455,17 +385,12 @@ def main():
 
     plot_1_actual_vs_predicted_scatter()
     plot_2_error_distribution()
-    plot_3_metrics_by_horizon()
-    plot_4_sample_predictions()
-    plot_5_heatmap_errors_by_hour()
-    plot_6_residuals_analysis()
-    plot_7_seed_comparison()
-    plot_8_daily_pattern()
-    plot_9_error_percentiles()
+    # Tutti gli altri plot richiedono colonne non presenti nell'ensemble (horizon, sample_idx, ecc.)
     plot_10_summary_dashboard()
+    print("[INFO] Plot avanzati disabilitati: dati insufficienti nell'ensemble.")
 
     print("=" * 60)
-    print(f"✅ All plots saved to: {PLOT_DIR}")
+    print(f"[DONE] All plots saved to: {PLOT_DIR}")
     print("=" * 60)
 
     # List all files

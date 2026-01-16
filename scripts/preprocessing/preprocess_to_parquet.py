@@ -1,110 +1,102 @@
 from __future__ import annotations
 
 from pathlib import Path
+import argparse
+import math
 
-import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+import pvlib
 
-INPUT_CSV = Path("data/processed/merged/pv_wx_combined.csv")
-OUTPUT_PARQUET = Path("data/processed/merged/pv_wx_combined.parquet")
-TARGET_COLUMN = "pv"
-CATEGORICAL_COLUMNS = ["weather_description"]
-INPUT_LEN = 24
-OUTPUT_LEN = 24
-WINDOW_STEP = 1
-
-
-def one_hot_encode(df, categorical_columns):
-    return pd.get_dummies(df, columns=categorical_columns)
+from pv_forecasting.features import (
+    add_calendar_flags,
+    add_lags,
+    add_rollings_h,
+    add_rolling_vars_h,
+    add_time_cyclical,
+    encode_weather_onehot,
+    standardize_feature_columns,
+)
 
 
-def normalize(df, exclude_columns=None):
-    scaler = MinMaxScaler()
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    if exclude_columns is not None:
-        cols_to_scale = [col for col in numeric_cols if col not in exclude_columns]
-    else:
-        cols_to_scale = numeric_cols
-    df[cols_to_scale] = scaler.fit_transform(df[cols_to_scale])
-    return df, scaler
+def parse_args() -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description="Preprocess raw PV/WX data to feature Parquet.")
+    ap.add_argument("--merged-csv", type=str, default="data/processed/merged/pv_wx_combined.csv")
+    ap.add_argument("--out", type=str, default="data/processed/merged/pv_wx_combined.parquet")
+    return ap.parse_args()
 
 
-def create_sliding_windows(df, input_len, output_len, feature_columns, target_column, step=1):
-    """Build sliding windows of features and targets."""
-    X = []
-    y = []
+def main() -> None:
+    args = parse_args()
+    out_path = Path(args.out)
 
-    feature_values = df[feature_columns].values
-    target_values = df[target_column].values
+    print(f"Loading merged CSV from {args.merged_csv} ...")
+    df = pd.read_csv(args.merged_csv, parse_dates=True, index_col=0)
 
-    max_start = len(df) - input_len - output_len + 1
-    for start in range(0, max_start, step):
-        end = start + input_len
-        target_end = end + output_len
-        X.append(feature_values[start:end])
-        y.append(target_values[end:target_end])
-
-    return np.array(X), np.array(y)
-
-
-def main():
-    # Carica il CSV
-    df = pd.read_csv(INPUT_CSV, parse_dates=True, index_col=0)
-
-    # Rimuovi colonne completamente NaN (es. dt_iso vuota dopo il merge)
+    # Rimuovi colonne completamente NaN
     all_nan_cols = [col for col in df.columns if df[col].isna().all()]
     if all_nan_cols:
         print(f"Rimuovo colonne tutte NaN: {all_nan_cols}")
         df = df.drop(columns=all_nan_cols)
 
-    # Gestione valori mancanti
+    # Fill specific NaN
     if "rain_1h" in df.columns:
         df["rain_1h"] = df["rain_1h"].fillna(0)
     if "clouds_all" in df.columns and df["clouds_all"].isnull().any():
         df["clouds_all"] = df["clouds_all"].fillna(0)
 
-    # Rimozione colonne costanti (lat, lon e altre)
-    constant_cols = [col for col in df.columns if df[col].nunique() == 1]
-    if "lat" in constant_cols:
-        print("Rimuovo colonna costante lat")
-    if "lon" in constant_cols:
-        print("Rimuovo colonna costante lon")
-    if constant_cols:
-        print(f"Rimuovo colonne costanti: {constant_cols}")
-        df = df.drop(columns=constant_cols)
+    # Standardize column names (lowercase, synonyms)
+    df = standardize_feature_columns(df)
 
-    # Rimozione feature sempre zero o sempre uguali
-    zero_cols = [col for col in df.columns if (df[col] == 0).all()]
-    if zero_cols:
-        print(f"Rimuovo colonne sempre zero: {zero_cols}")
-        df = df.drop(columns=zero_cols)
+    # One-hot encoding per weather_description -> wx_* colonne
+    if "weather_description" in df.columns:
+        df = encode_weather_onehot(df, col="weather_description")
 
-    # One-hot encoding su weather_description
-    df = one_hot_encode(df, CATEGORICAL_COLUMNS)
+    # Calcolo feature solari/clear-sky (richiede lat/lon)
+    if "lat" not in df.columns or "lon" not in df.columns:
+        raise SystemExit("lat/lon columns are required to compute solar/clear-sky features")
+    try:
+        lat = float(df["lat"].iloc[0])
+        lon = float(df["lon"].iloc[0])
+    except Exception as e:
+        raise SystemExit("Unable to parse lat/lon for solar feature computation") from e
+    # Usa timezone UTC (index già UTC); altitudine sconosciuta -> 0 m
+    loc = pvlib.location.Location(latitude=lat, longitude=lon, tz="UTC", altitude=0)
+    times = df.index
+    # Solar position
+    solar_pos = loc.get_solarposition(times=times)
+    df["sp_zenith"] = solar_pos["zenith"].astype(float)
+    df["sp_azimuth"] = solar_pos["azimuth"].astype(float)
+    # Clear-sky (Ineichen)
+    cs = loc.get_clearsky(times=times, model="ineichen")
+    df["cs_ghi"] = cs["ghi"].astype(float)
+    df["cs_dni"] = cs["dni"].astype(float)
+    df["cs_dhi"] = cs["dhi"].astype(float)
+    # Clearness index kc = ghi / cs_ghi
+    if "ghi" in df.columns:
+        kc = df["ghi"] / df["cs_ghi"].replace(0, math.nan)
+        df["kc"] = kc.replace([math.inf, -math.inf], math.nan).fillna(0)
 
-    # Normalizzazione (escludi la colonna target)
-    exclude_columns = [TARGET_COLUMN]
-    df, scaler = normalize(df, exclude_columns=exclude_columns)
+    # Time and calendar features
+    df = add_time_cyclical(df)
+    df = add_calendar_flags(df)
 
-    # Sliding windows
-    feature_columns = [col for col in df.columns if col != TARGET_COLUMN]
-    X, y = create_sliding_windows(
-        df, INPUT_LEN, OUTPUT_LEN, feature_columns, TARGET_COLUMN, step=WINDOW_STEP
-    )
+    # Lags e rolling su colonne chiave (se presenti)
+    lag_cols = [c for c in ["pv", "ghi", "dni", "dhi", "temp"] if c in df.columns]
+    if lag_cols:
+        df = add_lags(df, lag_cols, [1, 24, 168])
+    roll_cols = [c for c in ["pv", "ghi", "dni"] if c in df.columns]
+    if roll_cols:
+        df = add_rollings_h(df, roll_cols, [3, 6, 24, 168])
+        df = add_rolling_vars_h(df, roll_cols, [3, 6, 24, 168])
 
-    # Salva come parquet/pickle
-    out = {
-        "X": X,
-        "y": y,
-        "feature_columns": feature_columns,
-        "target_column": TARGET_COLUMN,
-        "scaler_min": scaler.data_min_,
-        "scaler_max": scaler.data_max_,
-    }
-    OUTPUT_PARQUET.parent.mkdir(parents=True, exist_ok=True)
-    pd.to_pickle(out, OUTPUT_PARQUET)
-    print(f"Saved preprocessed data to {OUTPUT_PARQUET}")
+    df = df.sort_index()
+
+    # Fill NaN per preservare tutte le righe (es. prime righe con lag mancanti)
+    df = df.fillna(0)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out_path)
+    print(f"Saved feature table to {out_path} with {len(df)} rows and {len(df.columns)} columns")
 
 
 if __name__ == "__main__":
