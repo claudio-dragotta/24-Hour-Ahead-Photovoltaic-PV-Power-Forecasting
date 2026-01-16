@@ -22,7 +22,7 @@ from .features import (
     add_rollings_h,
     add_solar_position,
     add_time_cyclical,
-    encode_weather_description,
+    encode_weather_onehot,
     standardize_feature_columns,
 )
 
@@ -114,8 +114,8 @@ def load_and_engineer_features(
 
     df = standardize_feature_columns(df)
 
-    # Encode weather_description from text to numerical ordinal values
-    df = encode_weather_description(df, col="weather_description")
+    # Encode weather_description into 19 one-hot weather categories (wx_*)
+    df = encode_weather_onehot(df, col="weather_description")
 
     df = add_time_cyclical(df)
     df = add_calendar_flags(df)
@@ -142,7 +142,7 @@ def load_and_engineer_features(
     df = df.sort_index()
     if dropna:
         # Drop rows with NaN only in critical numeric columns (lag features, target, irradiance)
-        # Keep text columns like 'weather_description' even if NaN
+        # Keep non-critical columns (e.g., one-hot weather flags) even if NaN
         critical_cols = [
             c for c in df.columns if any(x in c for x in ["pv", "ghi", "dni", "dhi", "lag", "roll", "var"])
         ]

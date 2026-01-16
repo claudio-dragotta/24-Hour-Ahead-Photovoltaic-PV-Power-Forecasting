@@ -1,0 +1,44 @@
+digraph MultiBranchTransformer {
+    rankdir=TB;
+    node [shape=box, style="rounded,filled", fontname="Arial", penwidth=2, color="#000000"];
+    edge [penwidth=2, color="#616161", arrowsize=1.2];
+
+    pv_input [label="PV History\n[batch, seq_len_encoder, n_pv_features]", fillcolor="#50e3c2", width=2, height=1];
+    pv_linear [label="Linear Embedding", fillcolor="#50e3c2"];
+    pv_pos [label="Positional Encoding", fillcolor="#50e3c2"];
+    pv_transformer [label="Transformer Encoder", fillcolor="#50e3c2"];
+    pv_compression [label="Temporal Compression/Interpolazione\n(Pooling/Adaptive/Classic)\nAggrega la sequenza temporale in un vettore compatto", fillcolor="#4a90e2", fontcolor="#ffffff", style="filled,bold", penwidth=3];
+
+    wx_hist_input [label="Weather History\n[batch, seq_len_encoder, n_hist_weather_features]", fillcolor="#b8e986", width=2, height=1];
+    wx_hist_linear [label="Linear Embedding", fillcolor="#b8e986"];
+    wx_hist_pos [label="Positional Encoding", fillcolor="#b8e986"];
+    wx_hist_transformer [label="Transformer Encoder", fillcolor="#b8e986"];
+    wx_hist_compression [label="Temporal Compression/Interpolazione\n(Pooling/Adaptive/Classic)\nAggrega la sequenza temporale in un vettore compatto", fillcolor="#4a90e2", fontcolor="#ffffff", style="filled,bold", penwidth=3];
+
+    wx_fcst_input [label="Weather Forecast\n[batch, seq_len_decoder, n_forecast_weather_features]", fillcolor="#f5a623", width=2, height=1];
+    wx_fcst_linear [label="Linear Embedding", fillcolor="#f5a623"];
+    wx_fcst_pos [label="Positional Encoding", fillcolor="#f5a623"];
+    wx_fcst_transformer [label="Transformer Encoder", fillcolor="#f5a623"];
+    wx_fcst_compression [label="Temporal Compression/Interpolazione\n(Pooling/Adaptive/Classic)\nAggrega la sequenza temporale in un vettore compatto", fillcolor="#4a90e2", fontcolor="#ffffff", style="filled,bold", penwidth=3];
+
+    fusion1 [label="Soft Attention Fusion\n(PV + Weather History)", shape=ellipse, fillcolor="#ffd54f", style="filled,bold", penwidth=4, width=2, height=1.2];
+    fc1 [label="FC + ReLU", shape=box, fillcolor="#fffde7", style="filled,bold", penwidth=2];
+    fusion2 [label="Soft Attention Fusion\n(Stage 1 + Weather Forecast)", shape=ellipse, fillcolor="#ffd54f", style="filled,bold", penwidth=4, width=2, height=1.2];
+    fc2 [label="FC + Dropout + FC\nOutput [batch, seq_len_decoder]", shape=box, fillcolor="#f8bbd0", style="filled,bold", penwidth=2];
+    sigmoid [label="Sigmoid\n(Normalized Output)", shape=box, fillcolor="#fce4ec", style="filled,bold", penwidth=2, width=2, height=1];
+
+    pv_input -> pv_linear -> pv_pos -> pv_transformer -> pv_compression;
+    wx_hist_input -> wx_hist_linear -> wx_hist_pos -> wx_hist_transformer -> wx_hist_compression;
+    wx_fcst_input -> wx_fcst_linear -> wx_fcst_pos -> wx_fcst_transformer -> wx_fcst_compression;
+
+    pv_compression -> fusion1;
+    wx_hist_compression -> fusion1;
+    wx_fcst_compression -> fusion2;
+    fusion1 -> fc1;
+    fc1 -> fusion2;
+    fusion2 -> fc2;
+    fc2 -> sigmoid;
+    // Nodo intermedio per centrare la convergenza
+    {rank=same; pv_compression; wx_hist_compression; wx_fcst_compression;}
+    fusion1 -> fusion2 [style=invis];
+}

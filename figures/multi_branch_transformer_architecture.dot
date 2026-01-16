@@ -1,0 +1,67 @@
+digraph MultiBranchTransformer {
+    rankdir=TB;
+    node [shape=box, style="rounded,filled", fontname="Arial", penwidth=2];
+
+
+
+    // Didascalia esplicita sulla funzione di interpolazione/compressione temporale
+    subgraph cluster_legend {
+        label="Legenda";
+        legend_interp [label="Temporal Compression/Interpolation:\nDopo il Transformer Encoder, ogni ramo applica una compressione temporale che può essere:\n- Pooling learnable\n- Interpolazione adattiva (Linear)\n- Interpolazione classica (matrice pesi fissa)\nQuesta fase aggrega l'informazione temporale in un vettore compatto, migliorando la rappresentazione per la fusione.", shape=note, fillcolor="#fffde7", fontcolor="#424242"];
+    }
+
+    subgraph cluster_pv {
+        label="PV History Branch";
+        pv_input [label="PV History\n[batch, seq_len_encoder, n_pv_features]", fillcolor="#50e3c2", peripheries=2];
+        pv_linear [label="Linear Embedding", fillcolor="#50e3c2", peripheries=2];
+        pv_pos [label="Positional Encoding", fillcolor="#50e3c2", peripheries=2];
+        pv_transformer [label="Transformer Encoder", fillcolor="#50e3c2", peripheries=2];
+        pv_compression [label="Temporal Compression/Interpolazione\n(Pooling/Adaptive/Classic)\nAggrega la sequenza temporale in un vettore compatto", fillcolor="#4a90e2", fontcolor="#ffffff", style="filled,bold", penwidth=2, peripheries=2];
+        pv_input -> pv_linear -> pv_pos -> pv_transformer -> pv_compression;
+        pv_input -> pv_linear -> pv_pos -> pv_transformer -> pv_compression;
+    }
+
+    subgraph cluster_wx_hist {
+        label="Weather History Branch";
+        wx_hist_input [label="Weather History\n[batch, seq_len_encoder, n_hist_weather_features]", fillcolor="#b8e986", peripheries=2];
+        wx_hist_linear [label="Linear Embedding", fillcolor="#b8e986", peripheries=2];
+        wx_hist_pos [label="Positional Encoding", fillcolor="#b8e986", peripheries=2];
+        wx_hist_transformer [label="Transformer Encoder", fillcolor="#b8e986", peripheries=2];
+        wx_hist_compression [label="Temporal Compression/Interpolazione\n(Pooling/Adaptive/Classic)\nAggrega la sequenza temporale in un vettore compatto", fillcolor="#4a90e2", fontcolor="#ffffff", style="filled,bold", penwidth=2, peripheries=2];
+        wx_hist_input -> wx_hist_linear -> wx_hist_pos -> wx_hist_transformer -> wx_hist_compression;
+        wx_hist_input -> wx_hist_linear -> wx_hist_pos -> wx_hist_transformer -> wx_hist_compression;
+    }
+
+    subgraph cluster_wx_fcst {
+        label="Weather Forecast Branch";
+        wx_fcst_input [label="Weather Forecast\n[batch, seq_len_decoder, n_forecast_weather_features]", fillcolor="#f5a623", peripheries=2];
+        wx_fcst_linear [label="Linear Embedding", fillcolor="#f5a623", peripheries=2];
+        wx_fcst_pos [label="Positional Encoding", fillcolor="#f5a623", peripheries=2];
+        wx_fcst_transformer [label="Transformer Encoder", fillcolor="#f5a623", peripheries=2];
+        wx_fcst_compression [label="Temporal Compression/Interpolazione\n(Pooling/Adaptive/Classic)\nAggrega la sequenza temporale in un vettore compatto", fillcolor="#4a90e2", fontcolor="#ffffff", style="filled,bold", penwidth=2, peripheries=2];
+        wx_fcst_input -> wx_fcst_linear -> wx_fcst_pos -> wx_fcst_transformer -> wx_fcst_compression;
+        wx_fcst_input -> wx_fcst_linear -> wx_fcst_pos -> wx_fcst_transformer -> wx_fcst_compression;
+    }
+
+    fusion1 [label="Soft Attention Fusion\n(PV + Weather History)", shape=ellipse, fillcolor="#ffd54f", style="filled,bold", penwidth=2, peripheries=2];
+    fc1 [label="FC + ReLU", shape=box, fillcolor="#fffde7", style="filled,bold", penwidth=2, peripheries=2];
+    fusion2 [label="Soft Attention Fusion\n(Stage 1 + Weather Forecast)", shape=ellipse, fillcolor="#ffd54f", style="filled,bold", penwidth=2, peripheries=2];
+    fc2 [label="FC + Dropout + FC\nOutput [batch, seq_len_decoder]", shape=box, fillcolor="#f8bbd0", style="filled,bold", penwidth=2, peripheries=2];
+    sigmoid [label="Sigmoid\n(Normalized Output)", shape=box, fillcolor="#fce4ec", style="filled,bold", penwidth=2, peripheries=2];
+
+    // Flusso architetturale esplicito
+    pv_compression -> fusion1;
+    wx_hist_compression -> fusion1;
+    fusion1 -> fc1;
+    fc1 -> fusion2;
+    wx_fcst_compression -> fusion2;
+    fusion2 -> fc2;
+    fc2 -> sigmoid;
+
+    pv_compression -> fusion1;
+    wx_hist_compression -> fusion1;
+    fusion1 -> fc1;
+    fc1 -> fusion2;
+    wx_fcst_compression -> fusion2;
+    fusion2 -> fc2 -> sigmoid;
+}
