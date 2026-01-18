@@ -401,14 +401,26 @@ For test evaluation, a separate held-out test parquet file is used.
 Execute the preprocessing pipeline:
 
 ```bash
-# Step 1: Merge PV and weather data with fixed UTC offset
+# Step 1: Flatten and merge raw data
+python scripts/preprocessing/flatten_pv_xlsx.py
+python scripts/preprocessing/flatten_wx_xlsx.py
+python scripts/preprocessing/convert_wx_to_utc.py
 python scripts/preprocessing/merge_pv_wx.py --fixed-offset-minutes 600
 
-# Step 2: Apply feature engineering and save as Parquet
-python scripts/preprocessing/preprocess_to_parquet.py
+# Step 2: Apply simplified preprocessing with scaling
+python scripts/preprocessing/preprocess_simple.py \
+    --merged-csv data/processed/merged/pv_wx_combined.csv \
+    --normalize-pv-by-max \
+    --global-minmax-scaling \
+    --out data/processed/merged/pv_wx_simple_scaled_FIXED.parquet
+
+# Step 3 (optional): Data augmentation
+python scripts/preprocessing/augment_data.py \
+    --input data/processed/merged/pv_wx_simple_scaled_FIXED.parquet \
+    --output data/processed/merged/pv_wx_augmented.parquet
 ```
 
-**Output**: `data/processed/merged/pv_wx_combined.parquet`
+**Output**: `data/processed/merged/pv_wx_simple_scaled_FIXED.parquet` (or `pv_wx_augmented.parquet`)
 
 ### 7.3 Model Training
 
@@ -577,12 +589,18 @@ python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
 Prepare the dataset from raw Excel files:
 
 ```bash
-# Merge PV and weather data
-python scripts/preprocessing/merge_pv_wx.py \
-    --fixed-offset-minutes 600
+# Step 1: Flatten and merge raw data
+python scripts/preprocessing/flatten_pv_xlsx.py
+python scripts/preprocessing/flatten_wx_xlsx.py
+python scripts/preprocessing/convert_wx_to_utc.py
+python scripts/preprocessing/merge_pv_wx.py --fixed-offset-minutes 600
 
-# Generate engineered features
-python scripts/preprocessing/preprocess_to_parquet.py
+# Step 2: Preprocessing with scaling
+python scripts/preprocessing/preprocess_simple.py \
+    --merged-csv data/processed/merged/pv_wx_combined.csv \
+    --normalize-pv-by-max \
+    --global-minmax-scaling \
+    --out data/processed/merged/pv_wx_simple_scaled_FIXED.parquet
 ```
 
 ### 11.2 Training Models
@@ -591,21 +609,19 @@ Train a single model:
 
 ```bash
 python scripts/training/train_multi_branch.py \
-    --processed-path data/processed/merged/pv_wx_combined.parquet \
+    --processed-path data/processed/merged/pv_wx_simple_scaled_FIXED.parquet \
     --outdir outputs/multi_branch/experiment_1 \
     --epochs 100
 ```
 
-Train multiple models for ensemble:
+Or use the provided shell scripts for specific configurations:
 
 ```bash
-# Train with different seeds (run multiple times with different output directories)
-for seed in 2 42 123; do
-    python scripts/training/train_multi_branch.py \
-        --processed-path data/processed/merged/pv_wx_combined.parquet \
-        --outdir outputs/multi_branch/seed_${seed} \
-        --epochs 100
-done
+# Train with augmented data
+bash scripts/training/train_augmented.sh
+
+# Train with temporal features
+bash scripts/training/train_WITH_TEMPORAL.sh
 ```
 
 ### 11.3 Creating Ensemble
@@ -629,10 +645,8 @@ Evaluate a trained model on held-out test data:
 
 ```bash
 python scripts/evaluation/eval_on_test.py \
-    --processed-path data/processed/merged/pv_wx_combined.parquet \
-    --test-path data/test/pv_wx_test.parquet \
-    --checkpoint outputs/multi_branch/experiment_1/model-best.ckpt \
-    --outdir outputs/evaluation/test_results
+    --model-dir outputs/multi_branch/experiment_1 \
+    --processed-test data/test/processed/pv_wx_test_FIXED.parquet
 ```
 
 ---
@@ -641,38 +655,57 @@ python scripts/evaluation/eval_on_test.py \
 
 ```
 24-Hour-Ahead-Photovoltaic-PV-Power-Forecasting/
-|
-+-- configs/                          # YAML configs for training/inference
-+-- data/                             # Datasets (not tracked in git)
-|   +-- raw/                          # Original Excel files
-|   +-- processed/                    # Intermediate Parquet/CSV
-|   +-- test/                         # Held-out test splits
-|
-+-- pv_forecasting/                   # Main Python package
-|   +-- cli.py                        # Entry points (pv-train, pv-predict)
-|   +-- data.py, features.py, pipeline.py, window.py
-|   +-- models/                       # Neural architectures & layers
-|   |   +-- multi_branch_tft.py       # Multi-branch Transformer core
-|   |   +-- layers.py                 # Positional encoding, soft attention
-|   +-- training/                     # Train runners for CNN/LGBM/TFT
-|   +-- inference/                    # Prediction utilities
-|   +-- metrics.py, logger.py, config.py
-|
-+-- scripts/                          # CLI-friendly scripts
-|   +-- preprocessing/                # Raw → processed (merge, parquet, augment)
-|   +-- training/                     # Experiment scripts (multi-branch, variants)
-|   +-- evaluation/                   # Eval on test sets
-|   +-- ensemble/                     # Build and run ensembles
-|
-+-- outputs/                          # Artifacts (checkpoints, plots, results)
-|   +-- multi_branch/                 # Multi-branch runs
-|   +-- ensemble/                     # Ensemble metrics/preds
-|   +-- figures/                      # Architecture diagrams (SVG/DOT)
-|
-+-- tests/                            # Pytest suite
-+-- requirements.txt                  # Python dependencies
-+-- pyproject.toml                    # Package metadata/config
-+-- LICENSE
+│
+├── configs/
+│   └── multi_branch.yaml             # Model configuration
+│
+├── data/
+│   ├── raw/                          # Original Excel files (pv_dataset.xlsx, wx_dataset.xlsx)
+│   ├── processed/merged/             # Preprocessed training data
+│   │   ├── pv_wx_simple_scaled_FIXED.parquet
+│   │   ├── pv_wx_augmented.parquet
+│   │   └── *_scaler_info.json
+│   └── test/processed/               # Preprocessed test data
+│
+├── pv_forecasting/                   # Main Python package
+│   ├── __init__.py
+│   ├── data.py                       # Data loading utilities
+│   ├── features.py                   # Feature engineering
+│   ├── logger.py                     # Logging utilities
+│   ├── metrics.py                    # MASE, RMSE metrics
+│   ├── pipeline.py                   # Data pipeline
+│   ├── timeutils.py                  # Timezone utilities
+│   └── models/
+│       ├── layers.py                 # Positional encoding, soft attention
+│       └── multi_branch_tft.py       # Multi-Branch Transformer
+│
+├── scripts/
+│   ├── preprocessing/                # Data preprocessing scripts
+│   │   ├── flatten_pv_xlsx.py
+│   │   ├── flatten_wx_xlsx.py
+│   │   ├── convert_wx_to_utc.py
+│   │   ├── merge_pv_wx.py
+│   │   ├── preprocess_simple.py      # Main preprocessing
+│   │   ├── augment_data.py           # Data augmentation
+│   │   └── preprocess_test_*.py      # Test data preprocessing
+│   ├── training/
+│   │   ├── train_multi_branch.py     # Main training script
+│   │   └── train_*.sh                # Training shell scripts
+│   ├── evaluation/
+│   │   └── eval_on_test.py           # Test evaluation
+│   ├── ensemble/
+│   │   └── create_ensemble.py        # Ensemble creation
+│   └── archived/                     # Archived/deprecated scripts
+│
+├── outputs/
+│   ├── multi_branch/                 # Trained models (7 variants)
+│   ├── ensemble/                     # Ensemble results
+│   └── figures/                      # Architecture diagrams
+│
+├── tests/                            # Unit tests
+├── requirements.txt
+├── pyproject.toml
+└── LICENSE
 ```
 
 ---
@@ -703,8 +736,6 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 - Claudio Dragotta — [github.com/claudio-dragotta](https://github.com/claudio-dragotta)
 - Lorenzo Grussu — [github.com/loregru](https://github.com/loregru)
-
-
 
 Deep Learning Course Project - Master's Degree
 

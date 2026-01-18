@@ -334,8 +334,8 @@ def main() -> None:
         df_scaled[pv_lag_features] = scalers["pv_scaler"].transform(df_scaled[pv_lag_features].values)
     if weather_lag_features:
         df_scaled[weather_lag_features] = scalers["weather_scaler"].transform(df_scaled[weather_lag_features].values)
-    if base_forecast:
-        df_scaled[base_forecast] = scalers["forecast_scaler_cont"].transform(df_scaled[base_forecast].values)
+    if forecast_features:
+        df_scaled[forecast_features] = scalers["forecast_scaler_cont"].transform(df_scaled[forecast_features].values)
     df_scaled[target] = scalers["target_scaler"].transform(df_scaled[target].values.reshape(-1, 1))
 
     dataset = InferenceDataset(
